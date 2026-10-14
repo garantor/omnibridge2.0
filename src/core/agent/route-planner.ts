@@ -43,33 +43,35 @@ export class RoutePlanner {
 
     // 1. Resolve token on source chain
     const srcTokens = this.registry.getSupportedTokens(srcChain.name);
-    const srcToken = srcTokens.find(t => t.symbol.toUpperCase() === intent.token.toUpperCase()) || {
-      symbol: intent.token,
-      name: intent.token,
-      address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-      decimals: 6,
-      chain: srcChain.name,
-    };
+    const srcToken = srcTokens.find(t => t.symbol.toUpperCase() === intent.token.toUpperCase());
+    if (!srcToken) {
+      throw new Error(`Token "${intent.token}" is not supported on source chain "${srcChain.displayName}". Supported: [${srcTokens.map(t => t.symbol).join(', ')}]`);
+    }
 
     // 2. Resolve token on destination chain
     const dstTokens = this.registry.getSupportedTokens(dstChain.name);
-    const dstToken = dstTokens.find(t => t.symbol.toUpperCase() === intent.token.toUpperCase()) || {
-      symbol: intent.token,
-      name: intent.token,
-      address: dstChain.vmType === 'stellar'
-        ? 'USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
-        : '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-      decimals: 6,
-      chain: dstChain.name,
-    };
+    const dstToken = dstTokens.find(t => t.symbol.toUpperCase() === intent.token.toUpperCase());
+    if (!dstToken) {
+      throw new Error(`Token "${intent.token}" is not supported on destination chain "${dstChain.displayName}". Supported: [${dstTokens.map(t => t.symbol).join(', ')}]`);
+    }
 
-    // 3. Fast-path route recipe matching
+    // 3. Fast-path route recipe matching directly from registered skills
     const recipe = this.registry.getRecommendedRecipe(srcChain.name, dstChain.name, intent.token);
-    const bridgeProtocol = recipe ? recipe.recommendedBridge : this.inferBridge(srcChain.name, dstChain.name, intent.token);
+    if (!recipe) {
+      const candidates = this.registry.getAllBridgeSkills().filter(b =>
+        b.supportedChains.includes(srcChain.name) &&
+        b.supportedChains.includes(dstChain.name) &&
+        b.supportedTokens.some(t => t.symbol.toUpperCase() === intent.token.toUpperCase())
+      );
+      if (candidates.length === 0) {
+        throw new Error(`No installed bridge skill supports route ${srcChain.displayName} -> ${dstChain.displayName} for ${intent.token}`);
+      }
+    }
+    const bridgeProtocol = recipe ? recipe.recommendedBridge : this.registry.getAllBridgeSkills()[0]?.name;
 
     // 4. Calculate fees & slippage invariants
     const inputNum = parseFloat(intent.amount) || 0;
-    const bridgeFeePercent = bridgeProtocol === 'circle-cctp' ? 0.0 : 0.0025; // 0% for CCTP, 0.25% for AMM/Relayers
+    const bridgeFeePercent = 0.0025; // Default standard base fee rate
     const bridgeFeeUsd = inputNum * bridgeFeePercent;
     const gasFeeUsd = srcChain.vmType === 'evm' ? 0.005 : 0.001;
     const totalFeeUsd = bridgeFeeUsd + gasFeeUsd;
@@ -95,11 +97,8 @@ export class RoutePlanner {
         ];
 
     const warnings: string[] = [];
-    if (dstChain.vmType === 'stellar' && !intent.memo) {
-      warnings.push('Stellar destination: Ensure account has an active USDC trustline. If sending to an exchange, a memo tag is required.');
-    }
-    if (dstChain.vmType === 'xrpl' && !intent.memo) {
-      warnings.push('XRPL destination: Ensure wallet does not require a Destination Tag.');
+    if (dstChain.vmType !== 'evm' && !intent.memo) {
+      warnings.push(`${dstChain.displayName} destination: If transferring to an exchange or custodial wallet, a memo / destination tag may be required.`);
     }
 
     return {
@@ -124,15 +123,5 @@ export class RoutePlanner {
       steps,
       warnings,
     };
-  }
-
-  private inferBridge(src: string, dst: string, token: string): string {
-    if (token.toUpperCase() === 'USDC' && ['polygon', 'base', 'arbitrum'].includes(src) && ['polygon', 'base', 'arbitrum'].includes(dst)) {
-      return 'circle-cctp';
-    }
-    if (src === 'stellar' || dst === 'stellar') {
-      return 'allbridge-core';
-    }
-    return 'across-v3';
   }
 }

@@ -78,13 +78,7 @@ Rules:
     let targetAddress = match[5] || defaultAddress;
 
     if (!targetAddress) {
-      if (targetChain === 'stellar') {
-        targetAddress = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN';
-      } else if (targetChain === 'xrpl') {
-        targetAddress = 'rN7n7otQDd6FczFgLdSqtcsAUxDkw6fzRH';
-      } else {
-        targetAddress = '0x1234567890123456789012345678901234567890';
-      }
+      targetAddress = defaultAddress || '0x0000000000000000000000000000000000000000';
     }
 
     return {

@@ -3,7 +3,6 @@ export { OmnibridgeEngine, type OmnibridgeEngineOptions, type ExecutionResult } 
 
 // Skills & Capabilities
 export { SkillRegistry } from './core/skills/skill-registry.js';
-export { SEED_CHAINS, SEED_ROUTE_RECIPES } from './core/skills/seed-catalog.js';
 export type {
   VmType,
   TokenMetadata,

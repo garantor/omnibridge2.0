@@ -48,6 +48,7 @@ export class SkillRegistry {
     }
   }
 
+
   private parseSkillFile(filePath: string): void {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
@@ -60,49 +61,68 @@ export class SkillRegistry {
 
       if (!frontmatter || !frontmatter.name) return;
 
-      if (frontmatter.type === 'chain') {
-        const chainName = frontmatter.name.toLowerCase();
-        const existing = this.chains.get(chainName) || {
-          name: chainName,
-          displayName: frontmatter.displayName || chainName,
-          vmType: frontmatter.vmType || 'evm',
-          chainId: frontmatter.chainId ?? 0,
-          nativeToken: frontmatter.nativeToken || { symbol: 'ETH', name: 'Ether', decimals: 18 },
-          defaultRpc: frontmatter.defaultRpc || '',
-          blockExplorer: frontmatter.blockExplorer || '',
-          rpcEnvVar: frontmatter.rpcEnvVar,
-          supportedTokens: [] as TokenMetadata[],
-        };
+      const skillName = frontmatter.name.toLowerCase();
+      const supportedChains: string[] = (frontmatter.supportedChains || []).map((c: any) => 
+        (typeof c === 'string' ? c : c.name).toLowerCase()
+      );
 
+      // Register protocol skill
+      this.bridgeSkills.set(skillName, {
+        name: skillName,
+        displayName: frontmatter.displayName || skillName,
+        version: frontmatter.version || '1.0.0',
+        type: 'bridge',
+        supportedChains,
+        supportedTokens: frontmatter.supportedTokens || [],
+        capabilities: frontmatter.capabilities || [],
+        contracts: frontmatter.contracts || {},
+        markdownRules,
+      });
+
+      // Automatically discover and register all chains mentioned in this skill
+      for (const rawChain of (frontmatter.supportedChains || [])) {
+        const isObj = typeof rawChain === 'object' && rawChain !== null;
+        const chainName = (isObj ? rawChain.name : rawChain).toLowerCase();
+        let chain = this.chains.get(chainName);
+
+        if (!chain) {
+          chain = {
+            name: chainName,
+            displayName: (isObj && rawChain.displayName) || chainName.charAt(0).toUpperCase() + chainName.slice(1),
+            vmType: (isObj && rawChain.vmType) || 'evm',
+            chainId: (isObj && rawChain.chainId !== undefined) ? rawChain.chainId : 0,
+            nativeToken: (isObj && rawChain.nativeToken) || { symbol: 'GAS', name: `${chainName.toUpperCase()} Native Gas`, decimals: 18 },
+            defaultRpc: (isObj && (rawChain.rpcUrl || rawChain.defaultRpc)) || '',
+            blockExplorer: (isObj && rawChain.blockExplorer) || '',
+            supportedTokens: [],
+          };
+          this.chains.set(chainName, chain);
+        } else if (isObj) {
+          // Merge metadata if provided
+          if (rawChain.displayName) chain.displayName = rawChain.displayName;
+          if (rawChain.vmType) chain.vmType = rawChain.vmType;
+          if (rawChain.chainId !== undefined) chain.chainId = rawChain.chainId;
+          if (rawChain.nativeToken) chain.nativeToken = rawChain.nativeToken;
+          if (rawChain.rpcUrl || rawChain.defaultRpc) chain.defaultRpc = rawChain.rpcUrl || rawChain.defaultRpc;
+          if (rawChain.blockExplorer) chain.blockExplorer = rawChain.blockExplorer;
+        }
+
+        // Register any tokens defined in this skill for this chain
         if (Array.isArray(frontmatter.supportedTokens)) {
           for (const token of frontmatter.supportedTokens) {
-            const tokenMeta: TokenMetadata = {
-              symbol: token.symbol,
-              name: token.name,
-              address: token.address || 'native',
-              decimals: token.decimals ?? 18,
-              chain: chainName,
-              issuer: token.issuer,
-            };
-            const idx = existing.supportedTokens.findIndex(t => t.symbol.toUpperCase() === token.symbol.toUpperCase());
-            if (idx >= 0) existing.supportedTokens[idx] = tokenMeta;
-            else existing.supportedTokens.push(tokenMeta);
+            const tokenAddr = token.addresses?.[chainName] || token.address || 'native';
+            const exists = chain.supportedTokens.some(t => t.symbol.toUpperCase() === token.symbol.toUpperCase());
+            if (!exists) {
+              chain.supportedTokens.push({
+                symbol: token.symbol.toUpperCase(),
+                name: token.name || token.symbol,
+                address: tokenAddr,
+                decimals: token.decimals ?? 6,
+                chain: chainName,
+              });
+            }
           }
         }
-        this.chains.set(chainName, existing);
-      } else if (frontmatter.type === 'bridge') {
-        const bridgeName = frontmatter.name.toLowerCase();
-        this.bridgeSkills.set(bridgeName, {
-          name: bridgeName,
-          displayName: frontmatter.displayName || bridgeName,
-          version: frontmatter.version || '1.0.0',
-          type: 'bridge',
-          supportedChains: (frontmatter.supportedChains || []).map((c: string) => c.toLowerCase()),
-          supportedTokens: frontmatter.supportedTokens || [],
-          capabilities: frontmatter.capabilities || [],
-          contracts: frontmatter.contracts || {},
-          markdownRules,
-        });
       }
     } catch (err) {
       // Graceful parsing skip

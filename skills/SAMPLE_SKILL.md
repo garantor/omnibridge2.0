@@ -1,22 +1,45 @@
 ---
 # ==============================================================================
 # CANONICAL SKILL DEFINITION SPECIFICATION (v1.0)
-# This file serves as the official template and guide for authoring new protocol
-# or chain skills in Omnibridge. Drop any valid SKILL.md into ./skills/bridges/ or
-# ./skills/chains/ to automatically enable it in the engine.
+# This file serves as the official template and guide for authoring protocol skills
+# in Omnibridge. Drop any valid SKILL.md into ./skills/<protocol-name>/ to
+# automatically enable it in the engine. Networks, tokens, and routes are
+# dynamically loaded directly from the installed skills library.
 # ==============================================================================
 
 # 1. Core Identity & Metadata
 name: sample-protocol-v1            # Unique kebab-case identifier
 displayName: "Sample Protocol v1"   # Human-readable label displayed in CLI & UI
-type: bridge                        # Skill type: 'bridge' | 'chain'
+type: bridge                        # Protocol skill type
 version: 1.0.0                      # Semver protocol specification version
 
 # 2. Network Topology & Supported Chains
+# Define network metadata directly within the skill (Zero hardcoded defaults in code)
 supportedChains:
-  - polygon
-  - base
-  - arbitrum
+  - name: polygon
+    displayName: "Polygon PoS"
+    chainId: 137
+    vmType: evm
+    nativeToken:
+      symbol: POL
+      decimals: 18
+    rpcUrl: "https://polygon-rpc.com"
+  - name: base
+    displayName: "Base"
+    chainId: 8453
+    vmType: evm
+    nativeToken:
+      symbol: ETH
+      decimals: 18
+    rpcUrl: "https://mainnet.base.org"
+  - name: arbitrum
+    displayName: "Arbitrum One"
+    chainId: 42161
+    vmType: evm
+    nativeToken:
+      symbol: ETH
+      decimals: 18
+    rpcUrl: "https://arb1.arbitrum.io/rpc"
 
 # 3. Asset & Token Coverage
 supportedTokens:

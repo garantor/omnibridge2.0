@@ -12,18 +12,16 @@ import {
 async function runTests() {
   console.log('🧪 Starting Omnibridge Core & Agent Test Suite...\n');
 
-  // Test 1: Skill Registry & Fast Seed Catalog
-  console.log('▶ Test 1: SkillRegistry Seed & File Discovery');
+  // Test 1: Skill Registry & Dynamic File Discovery
+  console.log('▶ Test 1: SkillRegistry Dynamic File Discovery');
   const registry = new SkillRegistry();
   await registry.loadSkills();
   const chains = registry.getSupportedChains();
-  assert(chains.length >= 5, `Expected at least 5 chains, found ${chains.length}`);
+  assert(chains.length >= 3, `Expected at least 3 chains from across-v3, found ${chains.length}`);
   assert(chains.some(c => c.name === 'polygon'), 'Polygon chain missing');
-  assert(chains.some(c => c.name === 'stellar'), 'Stellar chain missing');
   assert(chains.some(c => c.name === 'base'), 'Base chain missing');
   assert(chains.some(c => c.name === 'arbitrum'), 'Arbitrum chain missing');
-  assert(chains.some(c => c.name === 'xrpl'), 'XRPL chain missing');
-  console.log('  ✔ SkillRegistry correctly loaded and indexed all chains and bridge skills');
+  console.log('  ✔ SkillRegistry correctly loaded and indexed chains dynamically from skills');
 
   // Test 2: Address Checker
   console.log('▶ Test 2: Multi-VM Address Validator');
@@ -44,9 +42,9 @@ async function runTests() {
   console.log('▶ Test 3: Natural Language Intent Parsing');
   const mockModel = new DeterministicMockModel();
   const parser = new IntentParser(registry, mockModel);
-  const intent1 = await parser.parse('Bridge 250 USDC from Polygon to Stellar');
+  const intent1 = await parser.parse('Bridge 250 USDC from Polygon to Arbitrum');
   assert.equal(intent1.sourceChain, 'polygon');
-  assert.equal(intent1.targetChain, 'stellar');
+  assert.equal(intent1.targetChain, 'arbitrum');
   assert.equal(intent1.amount, '250');
   assert.equal(intent1.token, 'USDC');
   console.log('  ✔ IntentParser correctly extracted source, target, amount, and token');
@@ -55,7 +53,7 @@ async function runTests() {
   console.log('▶ Test 4: Route Planner & Deterministic Fast Recipe');
   const planner = new RoutePlanner(registry);
   const plan = planner.plan(intent1);
-  assert.equal(plan.bridgeProtocol, 'allbridge-core');
+  assert.equal(plan.bridgeProtocol, 'across-v3');
   assert(plan.steps.length >= 3, 'Expected at least 3 execution steps');
   assert(parseFloat(plan.amounts.minGuaranteedOutput) > 0, 'Min guaranteed output must be calculated');
   console.log(`  ✔ RoutePlanner bound intent to recipe "${plan.recipe?.id}" with ${plan.steps.length} steps`);
@@ -86,7 +84,7 @@ async function runTests() {
 
   // Test 7: Dry-Run Mode
   console.log('▶ Test 7: Dry-Run Execution Mode');
-  const dryRunResult = await engine.execute('Send 10 XRP from XRPL to Arbitrum', { dryRun: true });
+  const dryRunResult = await engine.execute('Bridge 50 USDC from Polygon to Base', { dryRun: true });
   assert(dryRunResult.success, 'Dry run should succeed');
   assert(!dryRunResult.txHash, 'Dry run must NOT broadcast transaction');
   console.log('  ✔ Dry-run generated code and simulated without transaction broadcast');
