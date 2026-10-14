@@ -11,7 +11,7 @@
 ## 1. Executive Summary & Vision
 
 ### 1.1 Problem Statement
-Cross-chain decentralized finance and asset transfers are plagued by combinatorial complexity. With heterogeneous virtual machines (EVMs like Polygon/Base/Arbitrum, Stellar Soroban & Horizon, XRP Ledger XRPL, Solana, Cosmos), differing transaction models (account-based vs. UTXO vs. trustlines/memos), and fragmented bridge protocols (Across, LayerZero, Circle CCTP, Wormhole, Stargate, Hyperlane), maintaining static software integrations requires $O(2^n)$ static interaction pathways. Static SDKs rot quickly as bridge contracts upgrade, APIs deprecate, or fee dynamics shift.
+Cross-chain decentralized finance and asset transfers are plagued by combinatorial complexity. With heterogeneous virtual machines (EVMs like Polygon/Base/Arbitrum, Stellar Soroban & Horizon, XRP Ledger XRPL, Solana, Cosmos), differing transaction models (account-based vs. UTXO vs. trustlines/memos), and fragmented bridge protocols (Across, LayerZero, Circle CCTP, Wormhole, Stargate, Hyperlane), maintaining static software integrations requires O(n^2) pairwise pathways and up to O(2^n) multi-hop compositional states. Static SDKs rot quickly as bridge contracts upgrade, APIs deprecate, or fee dynamics shift.
 
 ### 1.2 The JIT Agentic Solution
 Drawing on the **Agentic Engineering** paradigm (*"The End of Software Engineering: How AI Agents Are Fundamentally Restructuring the Software Paradigm"*, Cao 2026), this system eliminates the static integration software artifact as an intermediary. 
@@ -25,7 +25,7 @@ Instead of hardcoding hundreds of bridge permutations:
 
 ## 2. Core Architectural Model
 
-Following the formal agent model $A = (M, \mathcal{T}, \mathcal{M}, \Pi)$:
+Following the formal agent model A = (M, T, Memory, Pi):
 
 ```mermaid
 graph TD
@@ -45,14 +45,14 @@ graph TD
 
 | Mathematical Component | Architectural Implementation | Description |
 | :--- | :--- | :--- |
-| **Reasoning Core ($M$)** | **100% Model-Agnostic LLM Provider Interface** | Unified `ILanguageModel` abstraction supporting Anthropic, OpenAI, Google Gemini, and any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, DeepSeek, Groq) with zero vendor lock-in. |
-| **Tools ($\mathcal{T}$)** | Protocol Skills & Node Adapters | Chain RPC clients (Viem for EVM, Stellar SDK, XRPL Client), contract encoders, quote aggregators, token list resolvers. |
-| **Memory ($\mathcal{M}$)** | Skill Registry & Context Cache | Modular `skills/<protocol>/SKILL.md` parser, local vector/keyword registry, cached gas/fee indices, address book. |
-| **Planner ($\Pi$)** | Intent Decomposer & Route Planner | Multi-hop route solver that creates a deterministic `ExecutionPlan` with clear invariant checks. |
+| **Reasoning Core (M)** | **100% Model-Agnostic LLM Provider Interface** | Unified `ILanguageModel` abstraction supporting Anthropic, OpenAI, Google Gemini, and any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, DeepSeek, Groq) with zero vendor lock-in. |
+| **Tools (T)** | Protocol Skills & Node Adapters | Chain RPC clients (Viem for EVM, Stellar SDK, XRPL Client), contract encoders, quote aggregators, token list resolvers. |
+| **Memory** | Skill Registry & Context Cache | Modular `skills/<protocol>/SKILL.md` parser, local vector/keyword registry, cached gas/fee indices, address book. |
+| **Planner (Pi)** | Intent Decomposer & Route Planner | Multi-hop route solver that creates a deterministic `ExecutionPlan` with clear invariant checks. |
 
 ### 2.2 Model-Agnostic Reasoning Engine Architecture
 
-The reasoning engine $M$ is strictly decoupled from any proprietary model API using a unified abstraction:
+The reasoning engine (M) is strictly decoupled from any proprietary model API using a unified abstraction:
 
 ```typescript
 export interface ModelMessage {
@@ -89,7 +89,7 @@ export interface ILanguageModel {
 
 ## 3. Modular Skill/Reference Architecture (`SKILL.md`)
 
-Each blockchain network and bridge protocol is defined as an independent, composable module stored in `./skills/<domain>/<name>/SKILL.md`.
+Each blockchain network and bridge protocol is defined **strictly** as an independent, self-contained `SKILL.md` file. No chains or protocols are hardcoded in application logic.
 
 ### 3.1 Skill Directory Structure
 ```
@@ -135,27 +135,54 @@ Every `SKILL.md` contains strict YAML frontmatter and structured markdown instru
 ```markdown
 ---
 name: circle-cctp
+type: bridge # 'chain' | 'bridge'
 version: 1.0.0
-category: bridge
+displayName: "Circle CCTP"
 supportedChains:
   - polygon
   - base
   - arbitrum
 supportedTokens:
-  - USDC
-  - EURC
+  - symbol: USDC
+    decimals: 6
+    addresses:
+      polygon: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+      base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      arbitrum: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
 capabilities:
   - native-burn-and-mint
   - zero-slippage
-requirements:
-  nodePackages:
-    - viem
-    - @noble/hashes
-  environmentVariables:
-    - POLYGON_RPC_URL
-    - BASE_RPC_URL
-    - ARBITRUM_RPC_URL
 ---
+```
+
+### 3.3 Default Capability & Discovery Tools (`skills/registry.ts`)
+The system provides a default, unified introspection subsystem that scans, parses, and aggregates all local `SKILL.md` files dynamically.
+
+```typescript
+export interface ProtocolCapabilityEngine {
+  // Discovers and indexes all local SKILL.md files at startup or on change
+  loadSkills(): Promise<void>;
+
+  // Returns all currently supported chains with metadata (EVM/Non-EVM, RPCs, Native Gas token)
+  getSupportedChains(): ChainMetadata[];
+
+  // Returns all supported tokens per chain with contract addresses, decimals, and trustlines
+  getSupportedTokens(chain?: string): TokenMetadata[];
+
+  // Returns valid cross-chain routes given source and target
+  getAvailableRoutes(sourceChain: string, targetChain: string, tokenSymbol?: string): AvailableRoute[];
+
+  // Formats human-readable or LLM tool context string
+  formatCapabilityContextForLLM(): string;
+}
+```
+
+This subsystem serves a dual purpose:
+1. **As LLM Tools**: Automatically provides the model with up-to-date chains, tokens, and routes directly derived from disk.
+2. **As CLI Discovery Commands**:
+   - `omnibridge chains` — lists all active chains parsed from `SKILL.md`
+   - `omnibridge tokens` — lists all supported tokens across chains
+   - `omnibridge routes` — displays the bridge matrix between networks
 
 # Circle Cross-Chain Transfer Protocol (CCTP) Skill
 
@@ -199,7 +226,7 @@ Circle CCTP burns native USDC on the source chain and attests it via Circle Atte
 ### Step 2: Route Discovery & Skill Resolution
 - The Skill Registry indexes skills matching `sourceChain`, `destinationChain`, and `token`.
 - If a direct native bridge exists (e.g. Allbridge Core for Polygon to Stellar or CCTP for Polygon to Base), it selects the optimal path.
-- If multi-hop is required (e.g. Polygon USDC $\rightarrow$ Arbitrum USDC via CCTP, then swap to ARB via Uniswap v3), the planner composes multi-skill pipelines.
+- If multi-hop is required (e.g. Polygon USDC -> Arbitrum USDC via CCTP, then swap to ARB via Uniswap v3), the planner composes multi-skill pipelines.
 
 ### Step 3: Just-In-Time (JIT) Code Generation
 - The Synthesizer pulls code generation guidelines and contract ABIs from the resolved `SKILL.md` files.
@@ -274,7 +301,7 @@ Type [y/N] to proceed, [v] to view generated TypeScript code, [a] to abort:
 
 ### Step 7: Ephemeral Execution & Real-Time Telemetry
 - Script executes within a controlled child process.
-- Streams live progress: Approval $\rightarrow$ Lock/Deposit $\rightarrow$ Cross-Chain Message Relaying $\rightarrow$ Destination Mint/Claim $\rightarrow$ Final Balance Verification.
+- Streams live progress: Approval -> Lock/Deposit -> Cross-Chain Message Relaying -> Destination Mint/Claim -> Final Balance Verification.
 - Once complete, transient code is moved to `.omnibridge/archive/` with full transaction receipts and execution hash for reproducibility, leaving no lingering execution processes.
 
 ---
