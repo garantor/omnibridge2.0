@@ -155,34 +155,72 @@ capabilities:
 ---
 ```
 
-### 3.3 Default Capability & Discovery Tools (`skills/registry.ts`)
-The system provides a default, unified introspection subsystem that scans, parses, and aggregates all local `SKILL.md` files dynamically.
+### 3.3 Hybrid SkillRegistry: Fast Seed Catalog & Route Recipes (`skills/registry.ts`)
+
+To ensure **sub-second latency and zero cold-start delay**, the `SkillRegistry` implements a hybrid architecture:
+
+1. **Curated Fast Seed Catalog**:
+   - Pre-indexes canonical chains, tokens, addresses, decimals, and planned tokens directly in an in-memory dictionary.
+   - Provides instantaneous (<1ms) address, decimal, and capability resolution without waiting for file scans.
+   - Any external or custom `SKILL.md` dropped into `./skills/` seamlessly merges with or augments this seed registry.
+
+2. **Deterministic Route Hints & Multi-Hop Recipes**:
+   - Contains explicit, optimal preset route hints for common cross-chain pairs.
+   - Tells the agent engine the exact recommended pathway (e.g. `Polygon -> Stellar` should use `Allbridge Core`; `Polygon -> Base` should use `Circle CCTP`).
+   - Prevents slow exploratory LLM reasoning loops, ensures 100% route determinism, and slashes execution planning latency from seconds to milliseconds.
 
 ```typescript
+export interface RouteRecipe {
+  id: string;
+  sourceChain: string;
+  targetChain: string;
+  tokenSymbol: string;
+  recommendedBridge: string;
+  hops: {
+    step: number;
+    action: 'approve' | 'swap' | 'bridge' | 'claim';
+    chain: string;
+    protocol: string;
+    details: string;
+  }[];
+  expectedSettlementTimeSec: number;
+  notes?: string;
+}
+
+export interface SkillRegistryConfig {
+  // Pre-configured canonical chains & tokens for fast response
+  seedChains: ChainMetadata[];
+  seedTokens: TokenMetadata[];
+  
+  // Fast-path suggested multi-hop routing recipes
+  routeRecipes: RouteRecipe[];
+}
+```
+
+#### Example Pre-configured Fast Route Recipes:
+- **Polygon -> Stellar (USDC)**: Fast path via `Allbridge Core` (Single-hop lock on Polygon, mint on Stellar).
+- **Polygon -> Base (USDC)**: Fast path via `Circle CCTP` (Native burn on Polygon, mint on Base via Circle Attestation).
+- **Base -> Arbitrum (USDC/ETH)**: Fast path via `Across Protocol v3` (Intent relay, settles in ~2 seconds).
+- **XRPL -> Arbitrum (XRP)**: Fast path via `Axelar / XRPL Gateway` (Lock XRP on XRPL, mint axlXRP on Arbitrum).
+
+3. **Introspection & Capability Subsystem**:
+```typescript
 export interface ProtocolCapabilityEngine {
-  // Discovers and indexes all local SKILL.md files at startup or on change
   loadSkills(): Promise<void>;
-
-  // Returns all currently supported chains with metadata (EVM/Non-EVM, RPCs, Native Gas token)
   getSupportedChains(): ChainMetadata[];
-
-  // Returns all supported tokens per chain with contract addresses, decimals, and trustlines
   getSupportedTokens(chain?: string): TokenMetadata[];
-
-  // Returns valid cross-chain routes given source and target
   getAvailableRoutes(sourceChain: string, targetChain: string, tokenSymbol?: string): AvailableRoute[];
-
-  // Formats human-readable or LLM tool context string
+  getRecommendedRecipe(sourceChain: string, targetChain: string, tokenSymbol: string): RouteRecipe | null;
   formatCapabilityContextForLLM(): string;
 }
 ```
 
 This subsystem serves a dual purpose:
-1. **As LLM Tools**: Automatically provides the model with up-to-date chains, tokens, and routes directly derived from disk.
+1. **As LLM Tools & Fast Hints**: Automatically provides the model with up-to-date chains, tokens, and instant route recipes.
 2. **As CLI Discovery Commands**:
-   - `omnibridge chains` — lists all active chains parsed from `SKILL.md`
+   - `omnibridge chains` — lists all active & planned chains
    - `omnibridge tokens` — lists all supported tokens across chains
-   - `omnibridge routes` — displays the bridge matrix between networks
+   - `omnibridge routes` — displays the bridge matrix and suggested multi-hop paths
 
 # Circle Cross-Chain Transfer Protocol (CCTP) Skill
 
