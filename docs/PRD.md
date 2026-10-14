@@ -132,6 +132,7 @@ skills/
 
 ### 3.2 Canonical `SKILL.md` Specification
 Every `SKILL.md` contains strict YAML frontmatter and structured markdown instructions:
+
 ```markdown
 ---
 name: circle-cctp
@@ -153,6 +154,28 @@ capabilities:
   - native-burn-and-mint
   - zero-slippage
 ---
+
+# Circle Cross-Chain Transfer Protocol (CCTP) Skill
+
+## Overview
+Circle CCTP burns native USDC on the source chain and attests it via Circle Attestation Service, minting 1:1 native USDC on the destination chain without slippage.
+
+## Contract Addresses & Domain Identifiers
+| Chain | Domain ID | TokenMessenger Contract | MessageTransmitter Contract |
+|-------|-----------|--------------------------|------------------------------|
+| Polygon (PoS) | 7 | 0x9daF83... | 0x... |
+| Base | 6 | 0x1682Eb... | 0x... |
+| Arbitrum One | 3 | 0x19330d... | 0x... |
+
+## Execution Sequence
+1. Approve TokenMessenger to spend amount of USDC.
+2. Call depositForBurn(amount, destinationDomain, mintRecipient, burnToken).
+3. Fetch signed attestation from Circle Iris API.
+4. On destination chain, call receiveMessage(message, attestation).
+
+## Error Handling & Invariants
+- mintRecipient must be bytes32 padded (padHex(address, { size: 32 })).
+- Destination domain must match target chain ID.
 ```
 
 ### 3.3 Hybrid SkillRegistry: Fast Seed Catalog & Route Recipes (`skills/registry.ts`)
@@ -188,23 +211,11 @@ export interface RouteRecipe {
 }
 
 export interface SkillRegistryConfig {
-  // Pre-configured canonical chains & tokens for fast response
   seedChains: ChainMetadata[];
   seedTokens: TokenMetadata[];
-  
-  // Fast-path suggested multi-hop routing recipes
   routeRecipes: RouteRecipe[];
 }
-```
 
-#### Example Pre-configured Fast Route Recipes:
-- **Polygon -> Stellar (USDC)**: Fast path via `Allbridge Core` (Single-hop lock on Polygon, mint on Stellar).
-- **Polygon -> Base (USDC)**: Fast path via `Circle CCTP` (Native burn on Polygon, mint on Base via Circle Attestation).
-- **Base -> Arbitrum (USDC/ETH)**: Fast path via `Across Protocol v3` (Intent relay, settles in ~2 seconds).
-- **XRPL -> Arbitrum (XRP)**: Fast path via `Axelar / XRPL Gateway` (Lock XRP on XRPL, mint axlXRP on Arbitrum).
-
-3. **Introspection & Capability Subsystem**:
-```typescript
 export interface ProtocolCapabilityEngine {
   loadSkills(): Promise<void>;
   getSupportedChains(): ChainMetadata[];
@@ -215,35 +226,18 @@ export interface ProtocolCapabilityEngine {
 }
 ```
 
-This subsystem serves a dual purpose:
+#### Pre-configured Fast Route Recipes:
+- **Polygon -> Stellar (USDC)**: Fast path via `Allbridge Core` (Single-hop lock on Polygon, mint on Stellar).
+- **Polygon -> Base (USDC)**: Fast path via `Circle CCTP` (Native burn on Polygon, mint on Base via Circle Attestation).
+- **Base -> Arbitrum (USDC/ETH)**: Fast path via `Across Protocol v3` (Intent relay, settles in ~2 seconds).
+- **XRPL -> Arbitrum (XRP)**: Fast path via `Axelar / XRPL Gateway` (Lock XRP on XRPL, mint axlXRP on Arbitrum).
+
+#### Subsystem Capabilities:
 1. **As LLM Tools & Fast Hints**: Automatically provides the model with up-to-date chains, tokens, and instant route recipes.
 2. **As CLI Discovery Commands**:
    - `omnibridge chains` — lists all active & planned chains
    - `omnibridge tokens` — lists all supported tokens across chains
    - `omnibridge routes` — displays the bridge matrix and suggested multi-hop paths
-
-# Circle Cross-Chain Transfer Protocol (CCTP) Skill
-
-## Overview
-Circle CCTP burns native USDC on the source chain and attests it via Circle Attestation Service, minting 1:1 native USDC on the destination chain without slippage.
-
-## Contract Addresses & Domain Identifiers
-| Chain | Domain ID | TokenMessenger Contract | MessageTransmitter Contract |
-|-------|-----------|--------------------------|------------------------------|
-| Polygon (PoS) | 7 | 0x9daF83... | 0x... |
-| Base | 6 | 0x1682Eb... | 0x... |
-| Arbitrum One | 3 | 0x19330d... | 0x... |
-
-## Execution Sequence
-1. Approve `TokenMessenger` to spend amount of USDC.
-2. Call `depositForBurn(amount, destinationDomain, mintRecipient, burnToken)`.
-3. Fetch signed attestation from `https://iris-api.circle.com/attestations/${messageHash}`.
-4. On destination chain, call `receiveMessage(message, attestation)`.
-
-## Error Handling & Invariants
-- `mintRecipient` must be bytes32 padded (`padHex(address, { size: 32 })`).
-- Destination domain must match target chain ID.
-```
 
 ---
 
