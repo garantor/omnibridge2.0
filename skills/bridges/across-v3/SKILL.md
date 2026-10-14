@@ -1,37 +1,158 @@
 ---
 name: across-v3
+displayName: "Across Protocol v3 (Swap API)"
 type: bridge
 version: 3.0.0
-displayName: "Across Protocol v3"
+
+# Supported Networks for USDC
 supportedChains:
   - polygon
   - base
   - arbitrum
+
+# Supported Assets (USDC Only)
 supportedTokens:
   - symbol: USDC
     decimals: 6
-  - symbol: WETH
-    decimals: 18
-  - symbol: ETH
-    decimals: 18
+    addresses:
+      polygon: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+      base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+      arbitrum: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+
 capabilities:
+  - swap-api-v3
   - intent-fast-fill
   - sub-minute-settlement
-contracts:
-  polygon:
-    spokePool: "0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096"
-  base:
-    spokePool: "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64"
-  arbitrum:
-    spokePool: "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A"
+  - guaranteed-min-output
+
+api:
+  baseUrl: "https://app.across.to/api"
+  chainsEndpoint: "/swap/chains"
+  tokensEndpoint: "/swap/tokens"
+  approvalEndpoint: "/swap/approval"
+  depositStatusEndpoint: "/deposit/status"
+
+requirements:
+  nodePackages:
+    - viem
+  environmentVariables:
+    - POLYGON_RPC_URL
+    - BASE_RPC_URL
+    - ARBITRUM_RPC_URL
 ---
 
-# Across Protocol v3 Skill
+# Across Protocol v3 Skill (Swap API)
 
-## Bridge Mechanics
-Across uses an intent-driven model with decentralized relayer network. Relayers fill orders on the destination chain immediately (usually 1-3 seconds), taking repayment from Across SpokePools verified by UMA optimistic oracle.
+## 1. Protocol Architecture & Mechanics
+Across is an intent-based fast bridging protocol. Decentralized relayers front liquidity on the destination chain immediately (typically 1–3 seconds), taking repayment from Across SpokePools verified by the UMA optimistic oracle.
 
-## Execution Pattern
-1. Fetch quote from Across API `https://app.across.to/api/suggested-fees`.
-2. Approve `spokePool` for `amount`.
-3. Call `spokePool.depositV3(depositor, recipient, inputToken, outputToken, inputAmount, outputAmount, destinationChainId, exclusiveRelayer, quoteTimestamp, fillDeadline, exclusivityDeadline, message)`.
+All cross-chain transfers are orchestrated through the **Across Swap API**:
+1. **Discover chains**: `GET /swap/chains` — returns supported chains with chain IDs.
+2. **Look up tokens**: `GET /swap/tokens?chainId={id}` — returns verified tokens for a chain.
+3. **Get a quote**: `GET /swap/approval?originChainId=...&destinationChainId=...&inputToken=...&outputToken=...&amount=...&depositor=...&tradeType=minOutput`
+4. **Execute**: Send `approvalTxns` first (if required), then submit `swapTx`.
+5. **Track**: `GET /deposit/status?originChainId=...&depositTxHash=...`
+
+---
+
+## 2. API Endpoints Reference
+- **Base URL:** `https://app.across.to/api`
+- **Supported Chains:** `https://app.across.to/api/swap/chains`
+- **Supported Tokens:** `https://app.across.to/api/swap/tokens?chainId={chainId}`
+- **Quote & Approval:** `https://app.across.to/api/swap/approval`
+- **Deposit Status:** `https://app.across.to/api/deposit/status?originChainId={id}&depositTxHash={txHash}`
+
+---
+
+## 3. Step-by-Step Execution Sequence
+
+When generating JIT TypeScript execution scripts for Across, follow this exact 5-step flow:
+
+### Step 1: Discover Chains & Resolve Token Addresses
+```typescript
+// Query Across tokens API for the origin chain to resolve exact USDC contract address
+const tokensRes = await fetch(`https://app.across.to/api/swap/tokens?chainId=${originChainId}`);
+const tokens = await tokensRes.json();
+const usdcToken = tokens.find((t: any) => t.symbol.toUpperCase() === 'USDC');
+```
+
+### Step 2: Fetch Swap Quote & Pre-Built Transactions
+```typescript
+const quoteUrl = new URL('https://app.across.to/api/swap/approval');
+quoteUrl.searchParams.set('originChainId', originChainId.toString());
+quoteUrl.searchParams.set('destinationChainId', destinationChainId.toString());
+quoteUrl.searchParams.set('inputToken', usdcToken.address);
+quoteUrl.searchParams.set('outputToken', destUsdcToken.address);
+quoteUrl.searchParams.set('amount', amountUnits.toString()); // in 6 decimals (e.g. 50000000 for 50 USDC)
+quoteUrl.searchParams.set('depositor', senderAddress);
+quoteUrl.searchParams.set('recipient', destinationAddress);
+quoteUrl.searchParams.set('tradeType', 'minOutput');
+
+const quoteRes = await fetch(quoteUrl.toString());
+const quote = await quoteRes.json();
+
+// Critical Security Assertion: Verify simulation succeeded
+if (!quote.simulationSuccess) {
+  throw new Error(`Across quote simulation failed: ${quote.simulationError || 'Unknown simulation error'}`);
+}
+```
+
+### Step 3: Check Allowance & Execute Approvals
+```typescript
+// If approvalTxns are provided by Across Swap API, broadcast them first
+if (quote.approvalTxns && quote.approvalTxns.length > 0) {
+  for (const approveTx of quote.approvalTxns) {
+    const hash = await walletClient.sendTransaction({
+      to: approveTx.to,
+      data: approveTx.data,
+      value: BigInt(approveTx.value || 0),
+    });
+    await publicClient.waitForTransactionReceipt({ hash });
+  }
+}
+```
+
+### Step 4: Execute Swap Transaction (`swapTx`)
+```typescript
+// Send pre-built swap transaction generated by the API
+const depositTxHash = await walletClient.sendTransaction({
+  to: quote.swapTx.to,
+  data: quote.swapTx.data,
+  value: BigInt(quote.swapTx.value || 0),
+  gas: quote.swapTx.gas ? BigInt(quote.swapTx.gas) : undefined,
+});
+const receipt = await publicClient.waitForTransactionReceipt({ hash: depositTxHash });
+```
+
+### Step 5: Track Settlement
+```typescript
+// Poll status until filled by relayer
+const statusUrl = `https://app.across.to/api/deposit/status?originChainId=${originChainId}&depositTxHash=${depositTxHash}`;
+const statusRes = await fetch(statusUrl);
+const status = await statusRes.json(); // e.g. status: "filled"
+```
+
+---
+
+## 4. Architectural Conventions
+- **Asset Scope:** Strictly **USDC** (6 decimals) for all routes.
+- **Dynamic Endpoints:** NEVER hardcode contract addresses in execution logic — verify against `/swap/tokens`.
+- **Chain Verification:** NEVER hardcode chain IDs — use `/swap/chains` as source of truth.
+- **Trade Type:** Use `tradeType: "minOutput"` for standard transfers so the user is guaranteed to receive at least the quoted amount.
+- **Amount Formatting:** Format USDC amounts using 6 decimals (`parseUnits(amount, 6)`).
+
+---
+
+## 5. Security Guardrails & Invariants
+- **Zero Key Exfiltration:** NEVER log or expose private keys or seed phrases in logs or LLM context.
+- **Simulation Verification:** Always assert `quote.simulationSuccess === true` before proposing or executing transactions.
+- **Balance & Allowance Checks:** Validate `quote.checks.balance` and `quote.checks.allowance` prior to dispatch.
+- **Gas Limit Protection:** Use API-provided gas estimates instead of hardcoded fixed gas limits.
+- **Slippage Enforcement:** Ensure quoted `outputAmount` satisfies `outputAmount >= inputAmount * (1 - maxSlippage)`.
+
+---
+
+## 6. Common Agent Tasks
+- **"Bridge tokens"** — Execute the 5-step Swap API flow (chains -> tokens -> quote -> approve -> execute).
+- **"Get a quote"** — Call `/swap/approval` with origin/destination chain IDs, USDC addresses, and depositor.
+- **"Check bridge status"** — Query `/deposit/status` with origin chain ID and deposit transaction hash.

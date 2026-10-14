@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { AvailableRoute, BridgeSkillMetadata, ChainMetadata, RouteRecipe, TokenMetadata } from './skill.types.js';
-import { SEED_CHAINS, SEED_ROUTE_RECIPES } from './seed-catalog.js';
 
 export class SkillRegistry {
   private chains: Map<string, ChainMetadata> = new Map();
@@ -11,42 +10,38 @@ export class SkillRegistry {
   private initialized = false;
 
   constructor(private skillsRootDir: string = path.resolve(process.cwd(), 'skills')) {
-    this.hydrateFromSeed();
+    this.loadSkillsSync();
   }
 
   /**
-   * Fast sync initialization from pre-configured seed catalog (<1ms)
+   * Synchronously discovers and parses all local SKILL.md files on disk (<2ms)
    */
-  private hydrateFromSeed(): void {
-    for (const chain of SEED_CHAINS) {
-      this.chains.set(chain.name.toLowerCase(), { ...chain });
-    }
-    for (const recipe of SEED_ROUTE_RECIPES) {
-      this.routeRecipes.set(recipe.id, { ...recipe });
-    }
-  }
+  public loadSkillsSync(): void {
+    this.chains.clear();
+    this.bridgeSkills.clear();
+    this.routeRecipes.clear();
 
-  /**
-   * Discovers and parses all local SKILL.md files on disk
-   */
-  public async loadSkills(): Promise<void> {
-    if (!fs.existsSync(this.skillsRootDir)) {
-      this.initialized = true;
-      return;
+    if (fs.existsSync(this.skillsRootDir)) {
+      this.scanDirectorySync(this.skillsRootDir);
+      this.buildDynamicRoutes();
     }
-
-    await this.scanDirectory(this.skillsRootDir);
-    this.buildDynamicRoutes();
     this.initialized = true;
   }
 
-  private async scanDirectory(dir: string): Promise<void> {
+  /**
+   * Async alias for compatibility
+   */
+  public async loadSkills(): Promise<void> {
+    this.loadSkillsSync();
+  }
+
+  private scanDirectorySync(dir: string): void {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        await this.scanDirectory(fullPath);
+        this.scanDirectorySync(fullPath);
       } else if (entry.isFile() && (entry.name.toLowerCase() === 'skill.md' || entry.name.toLowerCase() === 'skills.md')) {
         this.parseSkillFile(fullPath);
       }
@@ -173,6 +168,11 @@ export class SkillRegistry {
       if (dst && recipe.targetChain !== dst) continue;
       if (sym && recipe.tokenSymbol !== sym) continue;
 
+      // Ensure the bridge protocol skill is actively installed
+      if (!this.bridgeSkills.has(recipe.recommendedBridge.toLowerCase())) {
+        continue;
+      }
+
       routes.push({
         sourceChain: recipe.sourceChain,
         targetChain: recipe.targetChain,
@@ -193,12 +193,17 @@ export class SkillRegistry {
 
     const directKey = `${src}-to-${dst}-${sym.toLowerCase()}`;
     if (this.routeRecipes.has(directKey)) {
-      return this.routeRecipes.get(directKey)!;
+      const recipe = this.routeRecipes.get(directKey)!;
+      if (this.bridgeSkills.has(recipe.recommendedBridge.toLowerCase())) {
+        return recipe;
+      }
     }
 
     for (const recipe of this.routeRecipes.values()) {
       if (recipe.sourceChain === src && recipe.targetChain === dst && recipe.tokenSymbol === sym) {
-        return recipe;
+        if (this.bridgeSkills.has(recipe.recommendedBridge.toLowerCase())) {
+          return recipe;
+        }
       }
     }
     return null;
@@ -222,6 +227,7 @@ export class SkillRegistry {
       .join('\n');
 
     const recipesSummary = Array.from(this.routeRecipes.values())
+      .filter(r => this.bridgeSkills.has(r.recommendedBridge.toLowerCase()))
       .map(r => `  * ${r.sourceChain} -> ${r.targetChain} (${r.tokenSymbol}) via ${r.recommendedBridge} (~${r.expectedSettlementTimeSec}s)`)
       .join('\n');
 
