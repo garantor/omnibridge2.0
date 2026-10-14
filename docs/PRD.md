@@ -1,10 +1,10 @@
 # Product Requirement Document (PRD)
-## Just-In-Time (JIT) Blockchain Omnibridge Engine & CLI
+## Just-In-Time (JIT) Blockchain Omnibridge Engine (Headless Core, CLI & UI-Ready)
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Status:** Approved for Implementation  
 **Runtime:** Node.js (v20+ LTS) / TypeScript (Strict Mode)  
-**Architecture:** Agentic Engineering (Perception-Memory-Action with Ephemeral JIT Code Synthesis & Strict HITL Gate)
+**Architecture:** Decoupled Headless Engine (Perception-Memory-Action) with Ephemeral JIT Code Synthesis and Pluggable HITL Interfaces (CLI & Web/Desktop UI)
 
 ---
 
@@ -13,32 +13,44 @@
 ### 1.1 Problem Statement
 Cross-chain decentralized finance and asset transfers are plagued by combinatorial complexity. With heterogeneous virtual machines (EVMs like Polygon/Base/Arbitrum, Stellar Soroban & Horizon, XRP Ledger XRPL, Solana, Cosmos), differing transaction models (account-based vs. UTXO vs. trustlines/memos), and fragmented bridge protocols (Across, LayerZero, Circle CCTP, Wormhole, Stargate, Hyperlane), maintaining static software integrations requires O(n^2) pairwise pathways and up to O(2^n) multi-hop compositional states. Static SDKs rot quickly as bridge contracts upgrade, APIs deprecate, or fee dynamics shift.
 
-### 1.2 The JIT Agentic Solution
+### 1.2 The JIT Agentic Solution & Decoupled Architecture
 Drawing on the **Agentic Engineering** paradigm (*"The End of Software Engineering: How AI Agents Are Fundamentally Restructuring the Software Paradigm"*, Cao 2026), this system eliminates the static integration software artifact as an intermediary. 
 Instead of hardcoding hundreds of bridge permutations:
 1. **Procedural Protocol Skills (`SKILL.md`)**: Bridge and blockchain knowledge is decentralized into human-and-machine-readable modular protocol skills.
 2. **Intent Parsing & Route Decomposition**: The reasoning core decomposes natural language intent (e.g., *"Move 500 USDC from Polygon to my Stellar wallet, low slippage"*) into verifiable cross-chain action sequences.
 3. **Just-In-Time (JIT) Ephemeral Code Generation**: The engine dynamically compiles a single-use, strictly typed, executable TypeScript execution script tailored precisely to that exact route and context.
-4. **Strict Human-in-the-Loop (HITL) Execution Gate**: The agent operates in the driver's seat, but the human retains complete supervisory authority. No transaction or private key action is ever executed without automated dry-run simulation, static security analysis, risk-boundary validation, and interactive cryptographic human sign-off.
+4. **Decoupled Headless Core (CLI & Web UI Dual Support)**: The core engine is 100% headless and event-driven. It outputs structured JSON payloads (`AuditPayload`, `SimulationResult`, `ExecutionEvent`) consumed equally by a terminal CLI and a modern web/desktop UI.
+5. **Pluggable Human-in-the-Loop (HITL) Gate**: Complete supervisory authority via an abstract `IHITLHandler` interface—supporting interactive terminal confirmation in CLI mode, and WebSocket / REST approval modal in Web UI mode.
 
 ---
 
 ## 2. Core Architectural Model
-
-Following the formal agent model A = (M, T, Memory, Pi):
+ 
+Following the formal agent model A = (M, T, Memory, Pi), the core engine is decoupled from the user-facing presentation layer:
 
 ```mermaid
 graph TD
-    User([User Natural Language Intent]) --> Perception[Intent Perception & Parser Engine]
-    Perception --> Memory[Memory & Skills Registry\n/skills/**/*.SKILL.md]
+    UserCLI([Terminal CLI User]) --> CLIAdapter[CLI Adapter Layer\nInteractive Inquirer / Chalk UI]
+    UserWeb([Web / Desktop UI User]) --> WebAdapter[API & WebSocket Server Adapter\nREST / SSE / WebSockets]
+    
+    CLIAdapter --> HeadlessEngine[Omnibridge Headless Core Engine]
+    WebAdapter --> HeadlessEngine
+    
+    HeadlessEngine --> Perception[Intent Perception & Parser Engine]
+    Perception --> Memory[Memory & Skills Registry\nSeed Catalog + /skills/**/*.SKILL.md]
     Memory --> Planner[Planning Engine - Route & Fee Optimizer]
     Planner --> Synthesizer[JIT Ephemeral Code Synthesizer]
     Synthesizer --> StaticAnalysis[Static AST Linter & Security Sandbox]
     StaticAnalysis --> Simulator[Pre-Flight Dry Run / Simulation Engine]
-    Simulator --> HITL[Strict Human-In-The-Loop Gate\nTerminal Card + Sign-off]
-    HITL -- Approved --> Runner[Sandboxed Execution Runner]
-    HITL -- Rejected / Modified --> User
-    Runner --> Telemetry[Cross-Chain State Tracker & Audit Logger]
+    
+    Simulator --> HITLGate[Abstract HITL Gate - IHITLHandler]
+    HITLGate -. Terminal Prompt .-> CLIAdapter
+    HITLGate -. JSON Event / Approval Modal .-> WebAdapter
+    
+    HITLGate -- Approved --> Runner[Sandboxed Execution Runner]
+    Runner --> Telemetry[Streaming Event Emitter & Audit Logger]
+    Telemetry -. Live Terminal Spinner .-> CLIAdapter
+    Telemetry -. Real-time Progress WebSocket .-> WebAdapter
 ```
 
 ### 2.1 Formal Subsystem Mapping
@@ -286,7 +298,70 @@ Before any interaction with live nodes:
 - Computes exact expected fees: Source Gas Fee + Bridge Protocol Fee + Destination Claim/Relayer Fee.
 
 ### Step 6: Strict Human-In-The-Loop (HITL) Gate
-The CLI prints an interactive high-contrast **Audit Card**:
+
+The HITL Gate is decoupled from any specific presentation mechanism via the `IHITLHandler` interface:
+
+```typescript
+export interface AuditPayload {
+  intent: string;
+  safetyScore: number; // 0 - 100
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  source: {
+    chain: string;
+    chainId?: number;
+    walletAddress: string;
+    tokenSymbol: string;
+    tokenAddress: string;
+    amount: string;
+    availableBalance: string;
+  };
+  destination: {
+    chain: string;
+    walletAddress: string;
+    tokenSymbol: string;
+    tokenAddress: string;
+    estimatedOutput: string;
+    minGuaranteedOutput: string;
+    maxSlippagePercent: number;
+    memo?: string;
+  };
+  bridge: {
+    protocol: string;
+    poolAddress?: string;
+    estimatedBridgeFee: string;
+    estimatedGasFee: string;
+    estimatedSettlementSec: number;
+  };
+  simulation: {
+    status: 'SUCCESS' | 'REVERT';
+    gasUnitsUsed: number;
+    astSecurityPassed: boolean;
+    invariantsPassed: boolean;
+  };
+  steps: {
+    index: number;
+    title: string;
+    description: string;
+    chain: string;
+  }[];
+  generatedScriptPath: string;
+  generatedCodePreview: string;
+  requiresPhraseConfirmation: boolean;
+  confirmationPhrase?: string;
+}
+
+export interface IHITLHandler {
+  requestApproval(payload: AuditPayload): Promise<{ approved: boolean; rejectionReason?: string }>;
+}
+```
+
+#### Dual Handler Implementations:
+1. **`CliHITLHandler`**:
+   Renders the high-contrast ASCII terminal Audit Card and prompts the user via keyboard (`[y/N]`, `[v]` to view code, `[a]` to abort). For high-value transfers, enforces interactive phrase typing (`CONFIRM 250 USDC TO STELLAR`).
+2. **`WebsocketHITLHandler`**:
+   Emits an `audit_request` event over WebSocket to any connected Web UI client (React, Next.js, Electron). The Web UI renders a rich confirmation modal with interactive slippage controls and code preview. The engine suspends execution asynchronously until the user clicks "Approve" (or signs with a browser wallet).
+
+#### Interactive Terminal Card (in CLI mode):
 ```text
 ================================================================================
                        OMNIBRIDGE JIT EXECUTION GATE
@@ -327,9 +402,6 @@ Action Steps:
 
 Type [y/N] to proceed, [v] to view generated TypeScript code, [a] to abort: 
 ```
-
-- If the user selects `v`, the syntax-highlighted generated code is printed or opened in the pager.
-- For high-value transactions (e.g. > $1,000 USD equivalent), the system prompts for explicit confirmation phrase typing: `CONFIRM 250 USDC TO STELLAR`.
 
 ### Step 7: Ephemeral Execution & Real-Time Telemetry
 - Script executes within a controlled child process.
@@ -373,18 +445,19 @@ Type [y/N] to proceed, [v] to view generated TypeScript code, [a] to abort:
 
 ---
 
-## 7. CLI Command Surface & User Experience
+## 7. Dual Presentation Surfaces: CLI & Web UI / API Server
 
-The CLI tool `omnibridge` provides an intuitive yet powerful developer interface:
+The engine provides dual interface surfaces backed by the same headless core:
 
+### 7.1 CLI Interface Surface
 ```bash
-# 1. Interactive Natural Language Command (Default)
+# 1. Interactive Natural Language Intent
 omnibridge "Bridge 100 USDC from Base to Arbitrum"
 
 # 2. Cross-VM Transfer (EVM to Stellar)
 omnibridge "Send 50 USDC from Polygon to GAYST7Q6N4YQZ54L76A4L5PGBKHK6T3M5Z3Y7C2M9K2L1P0 on Stellar"
 
-# 3. Dry-Run Only (Generate code & simulate without execution)
+# 3. Dry-Run Simulation Only
 omnibridge "Send 10 XRP from XRPL to Arbitrum" --dry-run
 
 # 4. Interactive REPL Mode
@@ -393,13 +466,20 @@ omnibridge repl
 # 5. Modular Skill Management
 omnibridge skills list
 omnibridge skills inspect circle-cctp
-omnibridge skills test polygon
 
-# 6. Wallet & Keystore Management
-omnibridge wallet import
-omnibridge wallet list
-omnibridge wallet balance --all
+# 6. Start Local Web/UI Gateway Server
+omnibridge serve --port 3000
 ```
+
+### 7.2 Web UI & API Server Gateway (`omnibridge serve`)
+For integration with modern Web UIs (React, Next.js, Vue, or Desktop Electron/Tauri):
+- **REST Endpoints**:
+  - `POST /api/intent/parse` — Returns structured intent entities and route recipes.
+  - `POST /api/intent/simulate` — Runs dry-run preflight checks, AST verification, and returns `AuditPayload`.
+  - `GET /api/capabilities` — Returns dynamic chains, tokens, and routes.
+- **WebSocket Streaming (`ws://localhost:3000/ws`)**:
+  - Emits real-time agent reasoning tokens, simulation status, and telemetry.
+  - **Interactive HITL Event Loop**: Emits `audit:request` with `AuditPayload`. The UI displays a native modal. When approved, UI sends `{ type: 'audit:response', approved: true }` to proceed with signed transaction broadcast.
 
 ---
 
@@ -412,42 +492,63 @@ omnibridge2.0/
 ├── bin/
 │   └── omnibridge.ts                # CLI entry point (shebang #!/usr/bin/env node)
 ├── src/
-│   ├── index.ts                     # Main library export
-│   ├── cli/
-│   │   ├── commands/
-│   │   │   ├── bridge.command.ts    # Main natural language intent runner
-│   │   │   ├── skills.command.ts    # Skill inspect & validate commands
-│   │   │   ├── wallet.command.ts    # Secure key / wallet commands
-│   │   │   └── repl.command.ts      # Interactive shell
-│   │   └── ui/
-│   │       ├── audit-card.ts        # Beautiful high-contrast HITL Audit Card
-│   │       └── progress-bar.ts      # Step-by-step progress spinner
-│   ├── core/
+│   ├── index.ts                     # Core library exports (Engine, Skills, Adapters)
+│   ├── core/                        # 100% HEADLESS AGENT & ENGINE (Zero CLI/DOM imports)
+│   │   ├── engine.ts                # OmnibridgeCore class (orchestrates lifecycle)
 │   │   ├── agent/
-│   │   │   ├── omni-agent.ts        # Agent orchestrator (M, T, M, Pi)
-│   │   │   ├── intent-parser.ts     # NLP intent extractor with schema validation
-│   │   │   └── route-planner.ts     # Multi-chain pathway planner
+│   │   │   ├── omni-agent.ts        # Agent reasoning loop (M, T, Memory, Pi)
+│   │   │   ├── intent-parser.ts     # NLP intent extractor with Zod validation
+│   │   │   └── route-planner.ts     # Multi-chain pathway planner & recipe matcher
+│   │   ├── llm/
+│   │   │   ├── model.interface.ts   # ILanguageModel abstraction
+│   │   │   ├── openai-adapter.ts    # OpenAI / Ollama / DeepSeek universal provider
+│   │   │   ├── anthropic-adapter.ts # Claude 3.5 Sonnet provider
+│   │   │   └── gemini-adapter.ts    # Google Gemini provider
 │   │   ├── skills/
-│   │   │   ├── skill-registry.ts    # Loads & parses SKILL.md modules
-│   │   │   ├── skill-matcher.ts     # Selects best skills for given intent
-│   │   │   └── skill.types.ts       # Type definitions for Skills
+│   │   │   ├── skill-registry.ts    # Hybrid fast seed catalog + SKILL.md dynamic loader
+│   │   │   ├── skill-matcher.ts     # Binds intents to chain and bridge skills
+│   │   │   └── skill.types.ts       # Type definitions for Skills & Recipes
 │   │   ├── synthesizer/
 │   │   │   ├── code-synthesizer.ts  # JIT code generation engine
-│   │   │   ├── ast-validator.ts     # Static security linter (banned APIs, unsafe imports)
-│   │   │   └── sandbox-runner.ts    # Child process sandbox execution with timeout
+│   │   │   ├── ast-validator.ts     # Static AST security linter
+│   │   │   └── sandbox-runner.ts    # Child process sandbox execution
 │   │   ├── simulation/
-│   │   │   ├── evm-simulator.ts     # Viem eth_call & state simulation
+│   │   │   ├── evm-simulator.ts     # Viem eth_call simulation
 │   │   │   ├── stellar-simulator.ts # Horizon & Soroban simulation
 │   │   │   └── xrpl-simulator.ts    # XRPL transaction simulation
 │   │   └── security/
-│   │       ├── hitl-gate.ts         # Strict Human-In-The-Loop verification logic
+│   │       ├── hitl-gate.ts         # Strict Human-In-The-Loop gate coordinator
 │   │       ├── keystore.ts          # AES-256-GCM local encrypted key storage
 │   │       └── address-checker.ts   # Multi-VM address & checksum verifier
+│   ├── adapters/                    # PLUGGABLE INTERFACE ADAPTERS
+│   │   ├── hitl/
+│   │   │   ├── hitl.interface.ts    # IHITLHandler interface & AuditPayload schema
+│   │   │   ├── cli-hitl.ts          # Interactive terminal Audit Card & keypress
+│   │   │   └── ws-hitl.ts           # WebSocket event-driven approval adapter for Web UI
+│   │   └── events/
+│   │       └── event-emitter.ts     # Unified execution telemetry streamer
+│   ├── cli/                         # CLI PRESENTATION LAYER
+│   │   ├── cli.ts                   # Commander program configuration
+│   │   ├── commands/
+│   │   │   ├── bridge.command.ts    # Intent bridge command runner
+│   │   │   ├── serve.command.ts     # Starts Web API/WebSocket server
+│   │   │   ├── skills.command.ts    # Skill inspect & list commands
+│   │   │   └── wallet.command.ts    # Secure key / wallet commands
+│   │   └── ui/
+│   │       ├── audit-card.ts        # High-contrast ANSI terminal Audit Card
+│   │       └── progress-bar.ts      # Terminal multi-step spinner
+│   ├── server/                      # WEB / API SERVER (For external Web/Desktop UIs)
+│   │   ├── server.ts                # Fastify/Node HTTP server entry
+│   │   ├── routes/
+│   │   │   ├── intent.router.ts     # REST endpoints for intent & simulation
+│   │   │   └── capabilities.router.ts # REST endpoints for chains & tokens
+│   │   └── websocket/
+│   │       └── ws-gateway.ts        # Real-time WebSocket streaming & HITL approval loop
 │   └── utils/
 │       ├── config.ts                # Environment & RPC provider configuration
 │       ├── logger.ts                # Winston / chalk color logger
 │       └── formatters.ts            # Currency, token, and hash formatters
-├── skills/                          # Modular SKILL.md registry
+├── skills/                          # MODULAR PROTOCOL REGISTRY (Single source of truth)
 │   ├── chains/
 │   └── bridges/
 └── test/
