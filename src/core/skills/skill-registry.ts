@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
 import { AvailableRoute, BridgeSkillMetadata, ChainMetadata, RouteRecipe, TokenMetadata } from './skill.types.js';
+import { SeedCatalog } from '../registry/seed-catalog.js';
 
 export class SkillRegistry {
   private chains: Map<string, ChainMetadata> = new Map();
@@ -21,6 +22,13 @@ export class SkillRegistry {
     this.bridgeSkills.clear();
     this.routeRecipes.clear();
 
+    // 1. Initialize Tier 1 & Tier 2 Seed Catalog
+    SeedCatalog.init();
+    for (const chain of SeedCatalog.getAllChains()) {
+      this.chains.set(chain.name.toLowerCase(), chain);
+    }
+
+    // 2. Discover and parse skills (Tier 3)
     if (fs.existsSync(this.skillsRootDir)) {
       this.scanDirectorySync(this.skillsRootDir);
       this.buildDynamicRoutes();
@@ -66,6 +74,25 @@ export class SkillRegistry {
         (typeof c === 'string' ? c : c.name).toLowerCase()
       );
 
+      // Normalize tokens supporting both simple string symbols (['USDC']) and rich objects
+      const normalizedTokens = (frontmatter.supportedTokens || []).map((t: any) => {
+        if (typeof t === 'string') {
+          const canonical = SeedCatalog.getToken(t);
+          return {
+            symbol: t.toUpperCase(),
+            decimals: canonical?.decimals ?? 6,
+            addresses: canonical?.addresses || {},
+          };
+        }
+        const sym = (t.symbol || '').toUpperCase();
+        const canonical = SeedCatalog.getToken(sym);
+        return {
+          symbol: sym,
+          decimals: t.decimals ?? canonical?.decimals ?? 6,
+          addresses: t.addresses || canonical?.addresses || {},
+        };
+      });
+
       // Register protocol skill
       this.bridgeSkills.set(skillName, {
         name: skillName,
@@ -73,20 +100,21 @@ export class SkillRegistry {
         version: frontmatter.version || '1.0.0',
         type: 'bridge',
         supportedChains,
-        supportedTokens: frontmatter.supportedTokens || [],
+        supportedTokens: normalizedTokens,
         capabilities: frontmatter.capabilities || [],
         contracts: frontmatter.contracts || {},
         markdownRules,
       });
 
-      // Automatically discover and register all chains mentioned in this skill
+      // Automatically discover and register/merge all chains mentioned in this skill
       for (const rawChain of (frontmatter.supportedChains || [])) {
         const isObj = typeof rawChain === 'object' && rawChain !== null;
         const chainName = (isObj ? rawChain.name : rawChain).toLowerCase();
         let chain = this.chains.get(chainName);
 
         if (!chain) {
-          chain = {
+          const canonical = SeedCatalog.getChain(chainName);
+          chain = canonical || {
             name: chainName,
             displayName: (isObj && rawChain.displayName) || chainName.charAt(0).toUpperCase() + chainName.slice(1),
             vmType: (isObj && rawChain.vmType) || 'evm',
@@ -98,7 +126,7 @@ export class SkillRegistry {
           };
           this.chains.set(chainName, chain);
         } else if (isObj) {
-          // Merge metadata if provided
+          // Merge metadata if overrides provided
           if (rawChain.displayName) chain.displayName = rawChain.displayName;
           if (rawChain.vmType) chain.vmType = rawChain.vmType;
           if (rawChain.chainId !== undefined) chain.chainId = rawChain.chainId;
@@ -106,26 +134,29 @@ export class SkillRegistry {
           if (rawChain.rpcUrl || rawChain.defaultRpc) chain.defaultRpc = rawChain.rpcUrl || rawChain.defaultRpc;
           if (rawChain.blockExplorer) chain.blockExplorer = rawChain.blockExplorer;
         }
+      }
 
-        // Register any tokens defined in this skill for this chain
-        if (Array.isArray(frontmatter.supportedTokens)) {
-          for (const token of frontmatter.supportedTokens) {
-            const tokenAddr = token.addresses?.[chainName] || token.address || 'native';
-            const exists = chain.supportedTokens.some(t => t.symbol.toUpperCase() === token.symbol.toUpperCase());
-            if (!exists) {
-              chain.supportedTokens.push({
-                symbol: token.symbol.toUpperCase(),
-                name: token.name || token.symbol,
-                address: tokenAddr,
-                decimals: token.decimals ?? 6,
-                chain: chainName,
-              });
-            }
+      // Register tokens defined or referenced in this skill for each supported chain
+      for (const chainName of supportedChains) {
+        const chain = this.chains.get(chainName);
+        if (!chain) continue;
+
+        for (const token of normalizedTokens) {
+          const tokenAddr = token.addresses?.[chainName] || SeedCatalog.resolveTokenForChain(token.symbol, chainName)?.address || 'native';
+          const exists = chain.supportedTokens.some(t => t.symbol.toUpperCase() === token.symbol.toUpperCase());
+          if (!exists) {
+            chain.supportedTokens.push({
+              symbol: token.symbol.toUpperCase(),
+              name: token.symbol,
+              address: tokenAddr,
+              decimals: token.decimals ?? 6,
+              chain: chainName,
+            });
           }
         }
       }
-    } catch (err) {
-      // Graceful parsing skip
+    } catch (err: any) {
+      console.warn(`⚠️ [SkillRegistry] Failed to parse skill file ${filePath}: ${err?.message || err}`);
     }
   }
 

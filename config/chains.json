@@ -1,0 +1,93 @@
+{
+  "polygon": {
+    "name": "polygon",
+    "displayName": "Polygon PoS",
+    "chainId": 137,
+    "vmType": "evm",
+    "nativeToken": {
+      "symbol": "POL",
+      "name": "Polygon",
+      "decimals": 18
+    },
+    "defaultRpc": "https://polygon-rpc.com",
+    "blockExplorer": "https://polygonscan.com"
+  },
+  "base": {
+    "name": "base",
+    "displayName": "Base",
+    "chainId": 8453,
+    "vmType": "evm",
+    "nativeToken": {
+      "symbol": "ETH",
+      "name": "Ether",
+      "decimals": 18
+    },
+    "defaultRpc": "https://mainnet.base.org",
+    "blockExplorer": "https://basescan.org"
+  },
+  "arbitrum": {
+    "name": "arbitrum",
+    "displayName": "Arbitrum One",
+    "chainId": 42161,
+    "vmType": "evm",
+    "nativeToken": {
+      "symbol": "ETH",
+      "name": "Ether",
+      "decimals": 18
+    },
+    "defaultRpc": "https://arb1.arbitrum.io/rpc",
+    "blockExplorer": "https://arbiscan.io"
+  },
+  "ethereum": {
+    "name": "ethereum",
+    "displayName": "Ethereum Mainnet",
+    "chainId": 1,
+    "vmType": "evm",
+    "nativeToken": {
+      "symbol": "ETH",
+      "name": "Ether",
+      "decimals": 18
+    },
+    "defaultRpc": "https://eth.llamarpc.com",
+    "blockExplorer": "https://etherscan.io"
+  },
+  "optimism": {
+    "name": "optimism",
+    "displayName": "Optimism Mainnet",
+    "chainId": 10,
+    "vmType": "evm",
+    "nativeToken": {
+      "symbol": "ETH",
+      "name": "Ether",
+      "decimals": 18
+    },
+    "defaultRpc": "https://mainnet.optimism.io",
+    "blockExplorer": "https://optimistic.etherscan.io"
+  },
+  "stellar": {
+    "name": "stellar",
+    "displayName": "Stellar",
+    "chainId": 0,
+    "vmType": "stellar",
+    "nativeToken": {
+      "symbol": "XLM",
+      "name": "Lumen",
+      "decimals": 7
+    },
+    "defaultRpc": "https://horizon.stellar.org",
+    "blockExplorer": "https://stellar.expert/explorer/public"
+  },
+  "xrpl": {
+    "name": "xrpl",
+    "displayName": "XRP Ledger",
+    "chainId": 0,
+    "vmType": "xrpl",
+    "nativeToken": {
+      "symbol": "XRP",
+      "name": "XRP",
+      "decimals": 6
+    },
+    "defaultRpc": "https://s1.ripple.com:51234",
+    "blockExplorer": "https://livenet.xrpl.org"
+  }
+}

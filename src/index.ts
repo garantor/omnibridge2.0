@@ -3,6 +3,7 @@ export { OmnibridgeEngine, type OmnibridgeEngineOptions, type ExecutionResult } 
 
 // Skills & Capabilities
 export { SkillRegistry } from './core/skills/skill-registry.js';
+export { SeedCatalog, type CanonicalToken } from './core/registry/seed-catalog.js';
 export type {
   VmType,
   TokenMetadata,

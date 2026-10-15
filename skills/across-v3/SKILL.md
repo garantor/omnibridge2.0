@@ -4,47 +4,16 @@ displayName: "Across Protocol v3 (Swap API)"
 type: bridge
 version: 3.0.0
 
-# Supported Networks for USDC (Self-contained in skill)
+# Supported Networks (Resolved automatically from Tier 1 Chain Registry)
 supportedChains:
-  - name: polygon
-    displayName: "Polygon PoS"
-    chainId: 137
-    vmType: evm
-    nativeToken:
-      symbol: POL
-      name: Polygon
-      decimals: 18
-    rpcUrl: "https://polygon-rpc.com"
-    blockExplorer: "https://polygonscan.com"
-  - name: base
-    displayName: "Base"
-    chainId: 8453
-    vmType: evm
-    nativeToken:
-      symbol: ETH
-      name: Ether
-      decimals: 18
-    rpcUrl: "https://mainnet.base.org"
-    blockExplorer: "https://basescan.org"
-  - name: arbitrum
-    displayName: "Arbitrum One"
-    chainId: 42161
-    vmType: evm
-    nativeToken:
-      symbol: ETH
-      name: Ether
-      decimals: 18
-    rpcUrl: "https://arb1.arbitrum.io/rpc"
-    blockExplorer: "https://arbiscan.io"
+  - polygon
+  - base
+  - arbitrum
+  - optimism
 
-# Supported Assets (USDC Only)
+# Supported Assets (Resolved automatically from Tier 2 Token Registry)
 supportedTokens:
-  - symbol: USDC
-    decimals: 6
-    addresses:
-      polygon: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
-      base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-      arbitrum: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+  - USDC
 
 capabilities:
   - swap-api-v3

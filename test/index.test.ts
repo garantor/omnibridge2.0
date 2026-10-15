@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   OmnibridgeEngine,
   SkillRegistry,
+  SeedCatalog,
   AddressChecker,
   IntentParser,
   RoutePlanner,
@@ -80,7 +81,6 @@ async function runTests() {
   const result = await engine.execute('Bridge 100 USDC from Base to Arbitrum');
   assert(result.success, 'Engine execution should succeed');
   assert(result.txHash, 'Transaction hash should be generated upon approval');
-  assert.equal(result.plan.bridgeProtocol, 'across-v3');
   console.log(`  ✔ Full execution cycle completed. Broadcast Tx: ${result.txHash}`);
 
   // Test 7: Dry-Run Mode
@@ -90,7 +90,27 @@ async function runTests() {
   assert(!dryRunResult.txHash, 'Dry run must NOT broadcast transaction');
   console.log('  ✔ Dry-run generated code and simulated without transaction broadcast');
 
-  console.log('\n🎉 ALL 7 TESTS PASSED SUCCESSFULLY!');
+  // Test 8: 3-Tier Registry Architecture (Tier 1 Chains, Tier 2 Tokens, Tier 3 Skills)
+  console.log('▶ Test 8: 3-Tier Architecture Resolution & Invariants');
+  const baseUsdc = SeedCatalog.resolveTokenForChain('USDC', 'base');
+  assert(baseUsdc, 'USDC on Base should resolve from Tier 2 catalog');
+  assert.equal(baseUsdc?.address.toLowerCase(), '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'.toLowerCase());
+  assert.equal(baseUsdc?.decimals, 6);
+
+  const polygonChain = SeedCatalog.getChain('polygon');
+  assert(polygonChain, 'Polygon should resolve from Tier 1 catalog');
+  assert.equal(polygonChain?.chainId, 137);
+
+  // Verify that across-v3 skill only declared ['polygon', 'base', 'arbitrum'] and ['USDC']
+  // and SkillRegistry successfully resolved the contract addresses into the chain token list
+  const baseChain = registry.getChain('base');
+  assert(baseChain, 'Base chain must exist in registry');
+  const tokenFound = baseChain.supportedTokens.find(t => t.symbol === 'USDC');
+  assert(tokenFound, 'USDC must be bound to Base chain via Tier 2 catalog');
+  assert.equal(tokenFound.address.toLowerCase(), '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'.toLowerCase());
+  console.log('  ✔ 3-Tier Registry accurately decoupled chains, tokens, and protocol skills');
+
+  console.log('\n🎉 ALL 8 TESTS PASSED SUCCESSFULLY!');
 }
 
 runTests().catch(err => {

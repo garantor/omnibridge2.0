@@ -45,14 +45,20 @@ export class RoutePlanner {
     const srcTokens = this.registry.getSupportedTokens(srcChain.name);
     const srcToken = srcTokens.find(t => t.symbol.toUpperCase() === intent.token.toUpperCase());
     if (!srcToken) {
-      throw new Error(`Token "${intent.token}" is not supported on source chain "${srcChain.displayName}". Supported: [${srcTokens.map(t => t.symbol).join(', ')}]`);
+      if (srcTokens.length === 0) {
+        throw new Error(`No active bridge skill currently supports source chain "${srcChain.displayName}". Add "${srcChain.name}" to supportedChains in your bridge SKILL.md.`);
+      }
+      throw new Error(`Token "${intent.token}" is not supported on source chain "${srcChain.displayName}". Supported tokens on this chain: [${srcTokens.map(t => t.symbol).join(', ')}]`);
     }
 
     // 2. Resolve token on destination chain
     const dstTokens = this.registry.getSupportedTokens(dstChain.name);
     const dstToken = dstTokens.find(t => t.symbol.toUpperCase() === intent.token.toUpperCase());
     if (!dstToken) {
-      throw new Error(`Token "${intent.token}" is not supported on destination chain "${dstChain.displayName}". Supported: [${dstTokens.map(t => t.symbol).join(', ')}]`);
+      if (dstTokens.length === 0) {
+        throw new Error(`No active bridge skill currently supports destination chain "${dstChain.displayName}". Add "${dstChain.name}" to supportedChains in your bridge SKILL.md.`);
+      }
+      throw new Error(`Token "${intent.token}" is not supported on destination chain "${dstChain.displayName}". Supported tokens on this chain: [${dstTokens.map(t => t.symbol).join(', ')}]`);
     }
 
     // 3. Fast-path route recipe matching directly from registered skills

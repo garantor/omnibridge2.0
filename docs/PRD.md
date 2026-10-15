@@ -142,66 +142,110 @@ skills/
     └── base-execution-script.ts.template
 ```
 
-### 3.2 Canonical `SKILL.md` Specification
-Every `SKILL.md` contains strict YAML frontmatter and structured markdown instructions:
+### 3.2 3-Tier Scalable Registry Architecture
 
+To prevent massive redundancy across multiple protocol skills and avoid copy-pasting chain RPCs and multichain contract addresses into every bridge definition, Omnibridge 2.0 adopts a **3-Tier Registry Architecture**:
+
+```mermaid
+graph TD
+    subgraph Tier1 ["Tier 1: Global Network Registry (config/chains.json)"]
+        C1["Chain Definitions: ChainID, RPCs, Explorers, Native Currency"]
+    end
+
+    subgraph Tier2 ["Tier 2: Global Token Catalog (config/tokens.json)"]
+        T1["Canonical Multichain Tokens: Symbol, Decimals, Addresses across all Chains"]
+    end
+
+    subgraph Tier3 ["Tier 3: Modular Protocol Skills (skills/*/SKILL.md)"]
+        S1["Protocol Logic & API Specs: Declares supportedChains: [base, arbitrum], supportedTokens: [USDC]"]
+    end
+
+    Tier1 -->|Auto-Enriches| Engine["Omnibridge Skill Engine"]
+    Tier2 -->|Auto-Enriches| Engine
+    Tier3 -->|Dynamic Registration| Engine
+```
+
+#### Tier 1: Centralized Network Registry (`config/chains.json`)
+Defines canonical network metadata once across the entire repository:
+```json
+{
+  "polygon": {
+    "displayName": "Polygon PoS",
+    "chainId": 137,
+    "vmType": "evm",
+    "nativeToken": { "symbol": "POL", "name": "Polygon", "decimals": 18 },
+    "defaultRpc": "https://polygon-rpc.com",
+    "blockExplorer": "https://polygonscan.com"
+  },
+  "base": {
+    "displayName": "Base",
+    "chainId": 8453,
+    "vmType": "evm",
+    "nativeToken": { "symbol": "ETH", "name": "Ether", "decimals": 18 },
+    "defaultRpc": "https://mainnet.base.org",
+    "blockExplorer": "https://basescan.org"
+  }
+}
+```
+
+#### Tier 2: Centralized Multichain Token Catalog (`config/tokens.json`)
+Defines canonical multichain token addresses and decimals globally:
+```json
+{
+  "USDC": {
+    "symbol": "USDC",
+    "name": "USD Coin",
+    "decimals": 6,
+    "addresses": {
+      "polygon": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "arbitrum": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "stellar": "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN"
+    }
+  }
+}
+```
+
+#### Tier 3: Lightweight Protocol Skills (`skills/<protocol>/SKILL.md`)
+Bridge skills declare only the networks and symbols they support; the engine auto-resolves addresses and chain parameters:
 ```markdown
 ---
-name: circle-cctp
-type: bridge # 'chain' | 'bridge'
-version: 1.0.0
-displayName: "Circle CCTP"
+name: across-v3
+displayName: "Across Protocol v3 (Swap API)"
+type: bridge
+version: 3.0.0
+
+# Supported Networks (Resolved from Tier 1)
 supportedChains:
   - polygon
   - base
   - arbitrum
+
+# Supported Assets (Resolved from Tier 2)
 supportedTokens:
-  - symbol: USDC
-    decimals: 6
-    addresses:
-      polygon: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
-      base: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-      arbitrum: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+  - USDC
+
 capabilities:
-  - native-burn-and-mint
-  - zero-slippage
+  - swap-api-v3
+  - intent-fast-fill
 ---
-
-# Circle Cross-Chain Transfer Protocol (CCTP) Skill
-
-## Overview
-Circle CCTP burns native USDC on the source chain and attests it via Circle Attestation Service, minting 1:1 native USDC on the destination chain without slippage.
-
-## Contract Addresses & Domain Identifiers
-| Chain | Domain ID | TokenMessenger Contract | MessageTransmitter Contract |
-|-------|-----------|--------------------------|------------------------------|
-| Polygon (PoS) | 7 | 0x9daF83... | 0x... |
-| Base | 6 | 0x1682Eb... | 0x... |
-| Arbitrum One | 3 | 0x19330d... | 0x... |
-
-## Execution Sequence
-1. Approve TokenMessenger to spend amount of USDC.
-2. Call depositForBurn(amount, destinationDomain, mintRecipient, burnToken).
-3. Fetch signed attestation from Circle Iris API.
-4. On destination chain, call receiveMessage(message, attestation).
-
-## Error Handling & Invariants
-- mintRecipient must be bytes32 padded (padHex(address, { size: 32 })).
-- Destination domain must match target chain ID.
 ```
 
-### 3.3 Hybrid SkillRegistry: Fast Seed Catalog & Route Recipes (`skills/registry.ts`)
+> [!NOTE]
+> **Backward Compatibility:** If a legacy or specialized skill provides custom chain overrides or custom contract address objects in frontmatter, the engine automatically merges them with highest precedence.
+
+### 3.3 Hybrid SkillRegistry: Fast Seed Catalog & Route Recipes (`src/core/skills/skill-registry.ts`)
 
 To ensure **sub-second latency and zero cold-start delay**, the `SkillRegistry` implements a hybrid architecture:
 
-1. **Curated Fast Seed Catalog**:
-   - Pre-indexes canonical chains, tokens, addresses, decimals, and planned tokens directly in an in-memory dictionary.
+1. **Curated Fast Seed Catalog (`src/core/registry/seed-catalog.ts`)**:
+   - Pre-indexes canonical chains, tokens, addresses, decimals, and planned tokens directly from Tier 1 & Tier 2 files into memory.
    - Provides instantaneous (<1ms) address, decimal, and capability resolution without waiting for file scans.
    - Any external or custom `SKILL.md` dropped into `./skills/` seamlessly merges with or augments this seed registry.
 
 2. **Deterministic Route Hints & Multi-Hop Recipes**:
    - Contains explicit, optimal preset route hints for common cross-chain pairs.
-   - Tells the agent engine the exact recommended pathway (e.g. `Polygon -> Stellar` should use `Allbridge Core`; `Polygon -> Base` should use `Circle CCTP`).
+   - Tells the agent engine the exact recommended pathway (e.g. `Base -> Arbitrum` should use `Across Protocol v3`).
    - Prevents slow exploratory LLM reasoning loops, ensures 100% route determinism, and slashes execution planning latency from seconds to milliseconds.
 
 ```typescript
