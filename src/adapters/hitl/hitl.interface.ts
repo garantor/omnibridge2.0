@@ -2,6 +2,7 @@ import { ExecutionStep } from '../../core/agent/route-planner.js';
 
 export interface AuditPayload {
   intent: string;
+  resolvedBy?: string;
   safetyScore: number; // 0 - 100
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
   source: {

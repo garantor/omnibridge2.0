@@ -28,7 +28,7 @@ export class CliHITLHandler implements IHITLHandler {
     const sections = [
       chalk.bold.cyan('OMNIBRIDGE JIT EXECUTION GATE'),
       '',
-      `${chalk.bold('Intent:')}           "${p.intent}"`,
+      `${chalk.bold('Intent:')}           "${p.intent}"${p.resolvedBy ? ` ${chalk.dim(`[${p.resolvedBy}]`)}` : ''}`,
       `${chalk.bold('Selected Route:')}   ${chalk.green(p.source.chain)} ──[ ${chalk.bold.yellow(p.bridge.protocol)} ]──> ${chalk.green(p.destination.chain)}`,
       `${chalk.bold('Safety Score:')}     ${riskColor(`${p.safetyScore}/100 (${p.riskLevel} RISK)`)}`,
       '',

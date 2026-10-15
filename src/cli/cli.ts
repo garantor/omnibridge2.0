@@ -19,6 +19,7 @@ export function createCli(): Command {
     .argument('[intent...]', 'Natural language cross-chain intent (e.g. "Bridge 250 USDC from Polygon to Stellar")')
     .option('-d, --dry-run', 'Simulate and generate JIT code without broadcasting transactions', false)
     .option('-y, --yes', 'Automatically approve execution without prompting', false)
+    .option('-v, --verbose', 'Print raw structured model response and debug details', false)
     .option('-m, --model <model>', 'LLM model to use')
     .option('-p, --provider <provider>', 'LLM provider (openai-compatible, mock, anthropic, gemini)')
     .action(async (intentParts: string[], options) => {
@@ -40,7 +41,17 @@ export function createCli(): Command {
 
       const signer = LiveExecutor.getSignerAccount();
       try {
-        console.log(chalk.bold.cyan(`\n⚡ Omnibridge Engine parsing intent: "${intentText}"...\n`));
+        console.log(chalk.bold.cyan(`\n⚡ Omnibridge Engine parsing intent: "${intentText}"...`));
+        engine.events.on('intent:parsed', (event: any) => {
+          const resolvedBy = event?.data?.resolvedBy || event?.resolvedBy;
+          if (resolvedBy) {
+            console.log(chalk.dim(`   ↳ Resolved via: ${chalk.bold.yellow(resolvedBy)}\n`));
+          }
+          if (options.verbose) {
+            console.log(chalk.bold.white('📦 Model Decomposition Output:'));
+            console.log(chalk.green(JSON.stringify(event?.data || event, null, 2)) + '\n');
+          }
+        });
         const result = await engine.execute(intentText, {
           dryRun: options.dryRun,
           targetAddress: signer?.address,

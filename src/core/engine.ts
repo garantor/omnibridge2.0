@@ -107,6 +107,7 @@ export class OmnibridgeEngine {
 
     return {
       intent: `Bridge ${plan.amounts.inputAmount} ${plan.sourceToken.symbol} from ${plan.intent.sourceChain} to ${plan.intent.targetChain}`,
+      resolvedBy: plan.intent.resolvedBy,
       safetyScore: 98,
       riskLevel: isHighValue ? 'MEDIUM' : 'LOW',
       source: {

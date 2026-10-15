@@ -20,7 +20,17 @@ export class OpenAICompatibleModel implements ILanguageModel {
     const systemPrompt = options.messages.find(m => m.role === 'system')?.content || '';
     const userPrompt = options.messages.filter(m => m.role !== 'system').map(m => `${m.role}: ${m.content}`).join('\n\n');
 
-    const schemaDescription = JSON.stringify(options.schema);
+    const schemaShape = (options.schema as any)?.shape;
+    let schemaDescription = '';
+    if (schemaShape) {
+      const fields: Record<string, string> = {};
+      for (const [key, val] of Object.entries(schemaShape)) {
+        fields[key] = (val as any)?.description || 'string';
+      }
+      schemaDescription = JSON.stringify(fields, null, 2);
+    } else {
+      schemaDescription = JSON.stringify(options.schema);
+    }
 
     const payload = {
       model: this.modelId,
@@ -51,7 +61,14 @@ export class OpenAICompatibleModel implements ILanguageModel {
 
     const json = await res.json() as any;
     const content = json.choices?.[0]?.message?.content || '{}';
-    const parsed = JSON.parse(content);
+    let parsed = JSON.parse(content);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.def && typeof parsed.def === 'object') {
+        parsed = parsed.def;
+      } else if (parsed.intent && typeof parsed.intent === 'object') {
+        parsed = parsed.intent;
+      }
+    }
     return options.schema.parse(parsed);
   }
 
@@ -157,7 +174,8 @@ export function createLanguageModel(options?: {
   apiKey?: string;
   baseUrl?: string;
 }): ILanguageModel {
-  const provider = options?.provider || process.env.LLM_PROVIDER || (process.env.OPENAI_API_KEY ? 'openai-compatible' : 'mock');
+  const hasKey = !!(options?.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY);
+  const provider = options?.provider || process.env.LLM_PROVIDER || (hasKey || options?.model ? 'openai-compatible' : 'mock');
 
   if (provider === 'mock') {
     return new DeterministicMockModel();
