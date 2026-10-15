@@ -233,6 +233,8 @@ capabilities:
 
 > [!NOTE]
 > **Backward Compatibility:** If a legacy or specialized skill provides custom chain overrides or custom contract address objects in frontmatter, the engine automatically merges them with highest precedence.
+>
+> 📖 For a step-by-step developer guide on adding chains, tokens, and bridge skills, see [docs/ADDING_BRIDGES_CHAINS_TOKENS.md](file:///Users/afolabi/projects/omnibridge2.0/docs/ADDING_BRIDGES_CHAINS_TOKENS.md).
 
 ### 3.3 Hybrid SkillRegistry: Fast Seed Catalog & Route Recipes (`src/core/skills/skill-registry.ts`)
 
