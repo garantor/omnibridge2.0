@@ -95,6 +95,14 @@ export class OmnibridgeEngine {
       walletAddress = signer.address;
       const realBal = await LiveExecutor.getRealBalance(srcChain, plan.sourceToken.address, plan.sourceToken.decimals, signer.address);
       availableBalance = `${realBal} ${plan.sourceToken.symbol}`;
+
+      if (srcChain.vmType === 'evm') {
+        const nativeBalStr = await LiveExecutor.getRealBalance(srcChain, 'native', 18, signer.address);
+        const nativeBal = parseFloat(nativeBalStr);
+        if (!isNaN(nativeBal) && nativeBal <= 0.00005) {
+          plan.warnings.push(`Low native gas balance (${nativeBalStr} ${srcChain.nativeToken?.symbol || 'ETH'}) on ${srcChain.displayName}. Ensure you have native gas before proceeding.`);
+        }
+      }
     }
 
     return {

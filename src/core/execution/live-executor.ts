@@ -1,5 +1,6 @@
 import { createPublicClient, createWalletClient, http, parseUnits, erc20Abi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import chalk from 'chalk';
 import { ExecutionPlan } from '../agent/route-planner.js';
 import { ChainMetadata } from '../skills/skill.types.js';
 
@@ -144,11 +145,15 @@ export class LiveExecutor {
       throw new Error(`Across Swap API did not return executable swapTx. Response: ${JSON.stringify(quote)}`);
     }
 
+    let activeQuote = quote;
+
     // Step 3: Execute approval transactions if required
-    if (Array.isArray(quote.approvalTxns) && quote.approvalTxns.length > 0) {
-      for (let i = 0; i < quote.approvalTxns.length; i++) {
-        const appTx = quote.approvalTxns[i];
-        logs.push(`[LIVE] Broadcasting approval tx [${i + 1}/${quote.approvalTxns.length}] to ${appTx.to}...`);
+    if (Array.isArray(activeQuote.approvalTxns) && activeQuote.approvalTxns.length > 0) {
+      for (let i = 0; i < activeQuote.approvalTxns.length; i++) {
+        const appTx = activeQuote.approvalTxns[i];
+        const logMsg = `[LIVE] Broadcasting approval tx [${i + 1}/${activeQuote.approvalTxns.length}] to ${appTx.to}...`;
+        logs.push(logMsg);
+        console.log(chalk.cyan(`\n⚡ Step 1: Broadcasting ERC-20 approval transaction...`));
         const approveHash = await walletClient.sendTransaction({
           chain: null,
           to: appTx.to,
@@ -156,25 +161,41 @@ export class LiveExecutor {
           value: BigInt(appTx.value || 0),
         });
         logs.push(`[LIVE] Approval broadcasted: ${approveHash}. Waiting for confirmation...`);
+        console.log(chalk.dim(`  Tx: ${approveHash}`));
+        console.log(chalk.yellow(`  Waiting for block inclusion...`));
         await client.waitForTransactionReceipt({ hash: approveHash });
         logs.push(`[LIVE] Approval confirmed on-chain.`);
+        console.log(chalk.green(`✔ ERC-20 approval confirmed on-chain!`));
+      }
+
+      // Allow 3 seconds for load-balanced RPC nodes to sync state across the cluster
+      console.log(chalk.dim(`⏳ Propagating approval state across RPC nodes...`));
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      // Refresh quote from Across Swap API with now-active allowance
+      const refreshRes = await fetch(quoteUrl.toString());
+      if (refreshRes.ok) {
+        activeQuote = (await refreshRes.json()) as any;
       }
     }
 
     // Step 4: Broadcast main swap transaction
-    logs.push(`[LIVE] Broadcasting swapTx to Across SpokePool ${quote.swapTx.to}...`);
+    logs.push(`[LIVE] Broadcasting swapTx to Across SpokePool ${activeQuote.swapTx.to}...`);
+    console.log(chalk.cyan(`\n⚡ Step 2: Broadcasting bridge deposit to Across SpokePool (${activeQuote.swapTx.to})...`));
     const depositTxHash = await walletClient.sendTransaction({
       chain: null,
-      to: quote.swapTx.to,
-      data: quote.swapTx.data,
-      value: BigInt(quote.swapTx.value || 0),
-      gas: quote.swapTx.gas && quote.swapTx.gas !== '0' ? BigInt(quote.swapTx.gas) : undefined,
+      to: activeQuote.swapTx.to,
+      data: activeQuote.swapTx.data,
+      value: BigInt(activeQuote.swapTx.value || 0),
+      gas: activeQuote.swapTx.gas && activeQuote.swapTx.gas !== '0' ? BigInt(activeQuote.swapTx.gas) : undefined,
     });
 
     logs.push(`[LIVE] Swap transaction broadcasted: ${depositTxHash}`);
-    logs.push(`[LIVE] Waiting for block inclusion...`);
+    console.log(chalk.dim(`  Tx: ${depositTxHash}`));
+    console.log(chalk.yellow(`  Waiting for on-chain confirmation...`));
     await client.waitForTransactionReceipt({ hash: depositTxHash });
     logs.push(`[LIVE] Transaction confirmed on-chain!`);
+    console.log(chalk.green(`✔ Mainnet bridge deposit confirmed on-chain!`));
 
     const explorerUrl = srcChain.blockExplorer ? `${srcChain.blockExplorer}/tx/${depositTxHash}` : undefined;
 
