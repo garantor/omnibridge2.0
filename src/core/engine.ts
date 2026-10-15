@@ -9,15 +9,19 @@ import { AuditPayload, HITLApprovalResponse, IHITLHandler } from '../adapters/hi
 import { CliHITLHandler } from '../adapters/hitl/cli-hitl.js';
 import { OmnibridgeEventEmitter } from '../adapters/events/event-emitter.js';
 
+import { LiveExecutor } from './execution/live-executor.js';
+
 export interface OmnibridgeEngineOptions {
   skillsRootDir?: string;
   llm?: ILanguageModel;
   hitlHandler?: IHITLHandler;
   autoApprove?: boolean;
+  simulateBroadcast?: boolean;
 }
 
 export interface ExecutionResult {
   success: boolean;
+  isLive?: boolean;
   intent: ParsedIntent;
   plan: ExecutionPlan;
   simulation: SimulationResult;
@@ -25,6 +29,7 @@ export interface ExecutionResult {
   auditPayload: AuditPayload;
   approval: HITLApprovalResponse;
   txHash?: string;
+  explorerUrl?: string;
   error?: string;
 }
 
@@ -36,15 +41,17 @@ export class OmnibridgeEngine {
   public synthesizer: CodeSynthesizer;
   public hitlHandler: IHITLHandler;
   public events: OmnibridgeEventEmitter;
+  private simulateBroadcast: boolean;
 
   constructor(options: OmnibridgeEngineOptions = {}) {
     this.registry = new SkillRegistry(options.skillsRootDir);
     this.llm = options.llm || createLanguageModel();
     this.intentParser = new IntentParser(this.registry, this.llm);
     this.routePlanner = new RoutePlanner(this.registry);
-    this.synthesizer = new CodeSynthesizer();
+    this.synthesizer = new CodeSynthesizer(this.registry);
     this.hitlHandler = options.hitlHandler || new CliHITLHandler(options.autoApprove ?? false);
     this.events = new OmnibridgeEventEmitter();
+    this.simulateBroadcast = options.simulateBroadcast ?? (process.env.NODE_ENV === 'test');
   }
 
   public async init(): Promise<void> {
@@ -75,9 +82,20 @@ export class OmnibridgeEngine {
     return script;
   }
 
-  public prepareAuditPayload(plan: ExecutionPlan, simulation: SimulationResult, script: SynthesizedScript): AuditPayload {
+  public async prepareAuditPayload(plan: ExecutionPlan, simulation: SimulationResult, script: SynthesizedScript): Promise<AuditPayload> {
     const inputNum = parseFloat(plan.intent.amount) || 0;
     const isHighValue = inputNum >= 1000;
+    const signer = LiveExecutor.getSignerAccount();
+    const srcChain = this.registry.getChain(plan.intent.sourceChain);
+
+    let walletAddress = 'Simulation Mode (No PRIVATE_KEY)';
+    let availableBalance = 'N/A';
+
+    if (signer && srcChain) {
+      walletAddress = signer.address;
+      const realBal = await LiveExecutor.getRealBalance(srcChain, plan.sourceToken.address, plan.sourceToken.decimals, signer.address);
+      availableBalance = `${realBal} ${plan.sourceToken.symbol}`;
+    }
 
     return {
       intent: `Bridge ${plan.amounts.inputAmount} ${plan.sourceToken.symbol} from ${plan.intent.sourceChain} to ${plan.intent.targetChain}`,
@@ -85,11 +103,11 @@ export class OmnibridgeEngine {
       riskLevel: isHighValue ? 'MEDIUM' : 'LOW',
       source: {
         chain: plan.intent.sourceChain,
-        walletAddress: '0x71C...392A',
+        walletAddress,
         tokenSymbol: plan.sourceToken.symbol,
         tokenAddress: plan.sourceToken.address,
         amount: plan.amounts.inputAmount,
-        availableBalance: '1,420.50 USDC',
+        availableBalance,
       },
       destination: {
         chain: plan.intent.targetChain,
@@ -143,8 +161,8 @@ export class OmnibridgeEngine {
     // 4. Pre-flight Simulation
     const simulation = await this.simulate(plan);
 
-    // 5. Construct Audit Payload
-    const auditPayload = this.prepareAuditPayload(plan, simulation, script);
+    // 5. Construct Audit Payload with real signer wallet & balance
+    const auditPayload = await this.prepareAuditPayload(plan, simulation, script);
 
     // If dry-run, stop before prompting or executing
     if (options.dryRun) {
@@ -180,16 +198,67 @@ export class OmnibridgeEngine {
 
     this.events.emitEvent('hitl:approved', approval);
 
-    // 7. Execute Ephemeral JIT Bridge Script
+    // 7. Execute Bridge Transfer
     for (const step of plan.steps) {
       this.events.emitEvent('execution:step', step);
     }
 
-    const txHash = '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    const signer = LiveExecutor.getSignerAccount();
+    const srcChain = this.registry.getChain(plan.intent.sourceChain);
+    const dstChain = this.registry.getChain(plan.intent.targetChain);
+
+    if (signer && srcChain && dstChain) {
+      try {
+        const liveResult = await LiveExecutor.execute(plan, srcChain, dstChain);
+        if (!liveResult.success) {
+          return {
+            success: false,
+            isLive: true,
+            intent,
+            plan,
+            simulation,
+            script,
+            auditPayload,
+            approval,
+            error: liveResult.error,
+          };
+        }
+
+        this.events.emitEvent('execution:complete', { txHash: liveResult.txHash, plan });
+        return {
+          success: true,
+          isLive: true,
+          intent,
+          plan,
+          simulation,
+          script,
+          auditPayload,
+          approval,
+          txHash: liveResult.txHash,
+          explorerUrl: liveResult.explorerUrl,
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          isLive: true,
+          intent,
+          plan,
+          simulation,
+          script,
+          auditPayload,
+          approval,
+          error: `Mainnet broadcast failed: ${err.message}`,
+        };
+      }
+    }
+
+    // Fallback if no private key is present (e.g. tests or simulation mode)
+    const txHash = this.simulateBroadcast ? '0x' + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('') : undefined;
     this.events.emitEvent('execution:complete', { txHash, plan });
 
     return {
       success: true,
+      isLive: false,
       intent,
       plan,
       simulation,
@@ -197,6 +266,7 @@ export class OmnibridgeEngine {
       auditPayload,
       approval,
       txHash,
+      error: !signer ? 'Simulation complete. Real transaction was not broadcast because no PRIVATE_KEY was found.' : undefined,
     };
   }
 }

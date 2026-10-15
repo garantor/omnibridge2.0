@@ -4,6 +4,7 @@ import Table from 'cli-table3';
 import readline from 'node:readline';
 import { OmnibridgeEngine } from '../core/engine.js';
 import { createLanguageModel } from '../core/llm/model-provider.js';
+import { LiveExecutor } from '../core/execution/live-executor.js';
 
 export function createCli(): Command {
   const program = new Command();
@@ -37,14 +38,28 @@ export function createCli(): Command {
         autoApprove: options.yes,
       });
 
+      const signer = LiveExecutor.getSignerAccount();
       try {
         console.log(chalk.bold.cyan(`\n⚡ Omnibridge Engine parsing intent: "${intentText}"...\n`));
-        const result = await engine.execute(intentText, { dryRun: options.dryRun });
+        const result = await engine.execute(intentText, {
+          dryRun: options.dryRun,
+          targetAddress: signer?.address,
+        });
 
         if (result.success && !options.dryRun) {
-          console.log(chalk.bold.green(`\n✔ Bridge transfer broadcasted successfully!`));
-          console.log(`${chalk.bold('Transaction Hash:')} ${chalk.cyan(result.txHash)}`);
-          console.log(`${chalk.bold('Expected Settlement:')} ~${result.plan.estimatedSettlementSec} seconds`);
+          if (result.isLive && result.txHash) {
+            console.log(chalk.bold.green(`\n✔ Real Mainnet Transfer broadcasted successfully!`));
+            console.log(`${chalk.bold('Transaction Hash:')} ${chalk.cyan(result.txHash)}`);
+            if (result.explorerUrl) {
+              console.log(`${chalk.bold('Block Explorer:')} ${chalk.underline.blue(result.explorerUrl)}`);
+            }
+            console.log(`${chalk.bold('Expected Settlement:')} ~${result.plan.estimatedSettlementSec} seconds`);
+          } else {
+            console.log(chalk.bold.yellow(`\nℹ Local Simulation Completed (Not broadcasted on-chain)`));
+            if (result.error) {
+              console.log(chalk.dim(`Note: ${result.error}`));
+            }
+          }
         } else if (result.success && options.dryRun) {
           console.log(chalk.bold.yellow(`\nℹ Dry-run simulation finished successfully.`));
           console.log(`${chalk.bold('Synthesized Script:')} ${result.script.filePath}`);

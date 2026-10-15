@@ -74,6 +74,7 @@ async function runTests() {
   const engine = new OmnibridgeEngine({
     llm: mockModel,
     autoApprove: true,
+    simulateBroadcast: true,
   });
 
   const result = await engine.execute('Bridge 100 USDC from Base to Arbitrum');
