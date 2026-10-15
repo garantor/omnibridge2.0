@@ -168,6 +168,44 @@ export function createCli(): Command {
       console.log(chalk.dim(`Total Routes: ${routes.length}\n`));
     });
 
+  // Bridges / Protocols command
+  program
+    .command('bridges')
+    .alias('protocols')
+    .alias('skills')
+    .description('List all supported cross-chain bridge protocols and installed skills')
+    .action(async () => {
+      const engine = new OmnibridgeEngine();
+      await engine.init();
+      const bridges = engine.registry.getAllBridgeSkills();
+
+      const table = new Table({
+        head: [
+          chalk.bold.cyan('Protocol ID'),
+          chalk.bold.cyan('Display Name'),
+          chalk.bold.cyan('Version'),
+          chalk.bold.cyan('Supported Chains'),
+          chalk.bold.cyan('Supported Assets'),
+          chalk.bold.cyan('Capabilities'),
+        ],
+      });
+
+      for (const b of bridges) {
+        table.push([
+          chalk.bold.green(b.name),
+          b.displayName,
+          chalk.dim(b.version),
+          b.supportedChains.join(', '),
+          b.supportedTokens.map(t => t.symbol).join(', '),
+          chalk.dim(b.capabilities.slice(0, 3).join(', ') + (b.capabilities.length > 3 ? '...' : '')),
+        ]);
+      }
+
+      console.log(chalk.bold('\n🛠️  SUPPORTED BRIDGE PROTOCOLS & INSTALLED SKILLS:'));
+      console.log(table.toString());
+      console.log(chalk.dim(`Total Protocols: ${bridges.length}\n`));
+    });
+
   // REPL interactive shell
   program
     .command('repl')

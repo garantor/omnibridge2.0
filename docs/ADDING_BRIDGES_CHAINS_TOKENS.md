@@ -224,7 +224,15 @@ npm run dev -- chains
 ```
 *Outputs a table showing every registered network, VM type, chain ID, and actively bridged tokens.*
 
-### 2. Test Dry-Run Execution (Without spending funds)
+### 2. View Supported Bridge Protocols & Installed Skills
+```bash
+npm run dev -- protocols
+# OR
+npm run dev -- bridges
+```
+*Outputs a table showing all installed bridge protocols, version, supported chains, assets, and capabilities.*
+
+### 3. Test Dry-Run Execution (Without spending funds)
 ```bash
 npm run dev -- -d -v "Bridge 10 USDC from base to optimism"
 ```
