@@ -1,26 +1,38 @@
 # Product Requirement Document (PRD)
-## Just-In-Time (JIT) Blockchain Omnibridge Engine (Headless Core, CLI & UI-Ready)
+## Just-In-Time (JIT) Blockchain Omnibridge Engine (Headless Core, Conversational Agent & UI-Ready)
 
-**Version:** 1.1.0  
+**Version:** 1.2.0  
 **Status:** Approved for Implementation  
 **Runtime:** Node.js (v20+ LTS) / TypeScript (Strict Mode)  
-**Architecture:** Decoupled Headless Engine (Perception-Memory-Action) with Ephemeral JIT Code Synthesis and Pluggable HITL Interfaces (CLI & Web/Desktop UI)
+**Architecture:** Decoupled Headless Engine (Perception-Memory-Action) with Multi-Turn Conversational Clarification, Dynamic Skill Ingestion, Ephemeral JIT Code Synthesis, and Pluggable HITL Interfaces (CLI & Web/Desktop UI)
 
 ---
 
 ## 1. Executive Summary & Vision
 
 ### 1.1 Problem Statement
-Cross-chain decentralized finance and asset transfers are plagued by combinatorial complexity. With heterogeneous virtual machines (EVMs like Polygon/Base/Arbitrum, Stellar Soroban & Horizon, XRP Ledger XRPL, Solana, Cosmos), differing transaction models (account-based vs. UTXO vs. trustlines/memos), and fragmented bridge protocols (Across, LayerZero, Circle CCTP, Wormhole, Stargate, Hyperlane), maintaining static software integrations requires O(n^2) pairwise pathways and up to O(2^n) multi-hop compositional states. Static SDKs rot quickly as bridge contracts upgrade, APIs deprecate, or fee dynamics shift.
+Cross-chain decentralized finance and asset transfers are plagued by combinatorial complexity. With heterogeneous virtual machines (EVMs like Polygon/Base/Arbitrum, Stellar Soroban & Horizon, XRP Ledger XRPL, Solana, Cosmos), differing transaction models (account-based vs. UTXO vs. trustlines/memos), and fragmented bridge protocols (Across, LayerZero, Circle CCTP, Wormhole, Stargate, LiFi, Hyperlane), maintaining static software integrations requires O(n^2) pairwise pathways and up to O(2^n) multi-hop compositional states. Static SDKs rot quickly as bridge contracts upgrade, APIs deprecate, or fee dynamics shift. Furthermore, traditional CLIs and forms fail when users provide ambiguous or incomplete requests, leading to hard crashes or unsafe default assumptions.
 
-### 1.2 The JIT Agentic Solution & Decoupled Architecture
-Drawing on the **Agentic Engineering** paradigm (*"The End of Software Engineering: How AI Agents Are Fundamentally Restructuring the Software Paradigm"*, Cao 2026), this system eliminates the static integration software artifact as an intermediary. 
-Instead of hardcoding hundreds of bridge permutations:
-1. **Procedural Protocol Skills (`SKILL.md`)**: Bridge and blockchain knowledge is decentralized into human-and-machine-readable modular protocol skills.
-2. **Intent Parsing & Route Decomposition**: The reasoning core decomposes natural language intent (e.g., *"Move 500 USDC from Polygon to my Stellar wallet, low slippage"*) into verifiable cross-chain action sequences.
-3. **Just-In-Time (JIT) Ephemeral Code Generation**: The engine dynamically compiles a single-use, strictly typed, executable TypeScript execution script tailored precisely to that exact route and context.
-4. **Decoupled Headless Core (CLI & Web UI Dual Support)**: The core engine is 100% headless and event-driven. It outputs structured JSON payloads (`AuditPayload`, `SimulationResult`, `ExecutionEvent`) consumed equally by a terminal CLI and a modern web/desktop UI.
-5. **Pluggable Human-in-the-Loop (HITL) Gate**: Complete supervisory authority via an abstract `IHITLHandler` interface—supporting interactive terminal confirmation in CLI mode, and WebSocket / REST approval modal in Web UI mode.
+### 1.2 The JIT Agentic Solution & Core Architectural Invariants
+Drawing on the **Agentic Engineering** paradigm (*"The End of Software Engineering: How AI Agents Are Fundamentally Restructuring the Software Paradigm"*, Cao 2026), this system eliminates the static integration software artifact as an intermediary and replaces rigid code paths with dynamic model-driven reasoning:
+
+1. **Multi-Turn Conversational Intent & Scope Evaluation**: 
+   - A user interacts conversationally with the model.
+   - The model evaluates whether the user's request falls within the scope of cross-chain bridging and asset transfer. If out of scope, it explains its capabilities and gently guides the user back.
+   - If details are incomplete (missing source/destination chain, token, transfer amount, recipient address, or memo), the model iteratively asks clarifying questions until all necessary transaction parameters are resolved.
+2. **Dynamic Skill-Driven Execution (Zero-Hardcoding Invariant)**:
+   - **MANDATORY RULE:** **No blockchain network, bridge protocol, DEX, or route pathway may be hardcoded into the core engine source code (`src/`), not even as an `if/else` or `switch` branch.**
+   - All blockchain capabilities, API endpoints, quote formats, and execution rules reside exclusively in modular protocol skill packages (`skills/<protocol>/SKILL.md`).
+   - The core engine is a universal, protocol-agnostic orchestration runtime.
+3. **Skill Discovery & Dynamic Route Resolution**:
+   - Once all transaction parameters are gathered, the reasoning core inspects its installed skill registry (`skills/**/*.SKILL.md`).
+   - The model dynamically evaluates which installed skill(s) satisfy the route and decides how the transaction should be handled without hardcoded protocol dispatchers.
+4. **Just-In-Time (JIT) Ephemeral Code Generation**:
+   - The engine compiles a single-use, strictly typed, executable TypeScript execution script tailored precisely to that exact route and context, directly drawing from the procedural rules in the selected skill's `SKILL.md`.
+5. **Decoupled Headless Core (CLI & Web UI Dual Support)**:
+   - The core engine is 100% headless and event-driven. It outputs structured JSON payloads (`AuditPayload`, `SimulationResult`, `ExecutionEvent`) consumed equally by a terminal CLI and a modern web/desktop UI.
+6. **Pluggable Human-in-the-Loop (HITL) Gate**:
+   - Complete supervisory authority via an abstract `IHITLHandler` interface—supporting interactive terminal confirmation in CLI mode, and WebSocket / REST approval modal in Web UI mode.
 
 ---
 
@@ -30,16 +42,18 @@ Following the formal agent model A = (M, T, Memory, Pi), the core engine is deco
 
 ```mermaid
 graph TD
-    UserCLI([Terminal CLI User]) --> CLIAdapter[CLI Adapter Layer\nInteractive Inquirer / Chalk UI]
-    UserWeb([Web / Desktop UI User]) --> WebAdapter[API & WebSocket Server Adapter\nREST / SSE / WebSockets]
+    UserCLI([Terminal CLI User]) --> CLIAdapter[CLI Adapter Layer\nInteractive Dialogue REPL & HITL Card]
+    UserWeb([Web / Desktop UI User]) --> WebAdapter[API & WebSocket Server Adapter\nChat Stream / REST / SSE / WebSockets]
     
     CLIAdapter --> HeadlessEngine[Omnibridge Headless Core Engine]
     WebAdapter --> HeadlessEngine
     
-    HeadlessEngine --> Perception[Intent Perception & Parser Engine]
-    Perception --> Memory[Memory & Skills Registry\nSeed Catalog + /skills/**/*.SKILL.md]
-    Memory --> Planner[Planning Engine - Route & Fee Optimizer]
-    Planner --> Synthesizer[JIT Ephemeral Code Synthesizer]
+    HeadlessEngine --> Dialogue[Conversational Agent & Dialogue State Machine\nScope Check + Slot-Filling Clarification Loop]
+    Dialogue -->|Incomplete| AskUser[Clarification Prompt to User]
+    Dialogue -->|Complete Intent| SkillDiscovery[Dynamic Skill Registry & Inventory\nDiscovers all /skills/**/*.SKILL.md]
+    
+    SkillDiscovery --> Planner[Dynamic Route Solver & Recipe Matcher\nZero Hardcoded Protocols]
+    Planner --> Synthesizer[JIT Ephemeral Code Synthesizer\nLLM Ingestion of Skill Markdown Guidelines]
     Synthesizer --> StaticAnalysis[Static AST Linter & Security Sandbox]
     StaticAnalysis --> Simulator[Pre-Flight Dry Run / Simulation Engine]
     
@@ -47,7 +61,7 @@ graph TD
     HITLGate -. Terminal Prompt .-> CLIAdapter
     HITLGate -. JSON Event / Approval Modal .-> WebAdapter
     
-    HITLGate -- Approved --> Runner[Sandboxed Execution Runner]
+    HITLGate -- Approved --> Runner[Protocol-Agnostic JIT Execution Runner]
     Runner --> Telemetry[Streaming Event Emitter & Audit Logger]
     Telemetry -. Live Terminal Spinner .-> CLIAdapter
     Telemetry -. Real-time Progress WebSocket .-> WebAdapter
@@ -57,10 +71,10 @@ graph TD
 
 | Mathematical Component | Architectural Implementation | Description |
 | :--- | :--- | :--- |
-| **Reasoning Core (M)** | **100% Model-Agnostic LLM Provider Interface** | Unified `ILanguageModel` abstraction supporting Anthropic, OpenAI, Google Gemini, and any OpenAI-compatible endpoint (Ollama, vLLM, OpenRouter, DeepSeek, Groq) with zero vendor lock-in. |
-| **Tools (T)** | Protocol Skills & Node Adapters | Chain RPC clients (Viem for EVM, Stellar SDK, XRPL Client), contract encoders, quote aggregators, token list resolvers. |
-| **Memory** | Skill Registry & Context Cache | Modular `skills/<protocol>/SKILL.md` parser, local vector/keyword registry, cached gas/fee indices, address book. |
-| **Planner (Pi)** | Intent Decomposer & Route Planner | Multi-hop route solver that creates a deterministic `ExecutionPlan` with clear invariant checks. |
+| **Reasoning Core (M)** | **Conversational Dialogue & Intent Engine** | Evaluates user scope, handles multi-turn clarification questions, and extracts complete structured bridge intents using unified `ILanguageModel`. |
+| **Tools (T)** | Modular Protocol Skills (`SKILL.md`) | Discovered dynamically at runtime. Contains API endpoints, SDK patterns, chain configs, and transaction synthesis rules. Core source has zero protocol branches. |
+| **Memory** | Dynamic Skill Registry & Conversation State | Tracks multi-turn dialogue slots, active/installed skills inventory, network RPC indices, and address checksum rules. |
+| **Planner (Pi)** | Dynamic Route Resolver & JIT Code Synthesizer | Evaluates matching skills against the resolved intent, constructs execution plans, and synthesizes single-use execution scripts strictly from skill knowledge. |
 
 ### 2.2 Model-Agnostic Reasoning Engine Architecture
 
@@ -301,30 +315,61 @@ export interface ProtocolCapabilityEngine {
 
 ## 4. System Workflow & Intent Lifecycle
 
-### Step 1: Natural Language Intent Parsing & Entity Extraction
-- User inputs natural language: e.g. `"Bridge 250 USDC from Polygon to my Stellar wallet GAY... with maximum 0.5% slippage"`.
-- Engine parses:
-  - `sourceChain`: `polygon` (EVM, ChainID: 137)
-  - `destinationChain`: `stellar` (Non-EVM, Public Horizon)
-  - `sourceToken`: `USDC` (0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359)
-  - `destinationToken`: `USDC` (Stellar Asset: USDC:GA5ZSEJY...)
-  - `amount`: `250.0`
-  - `destinationAddress`: `GAY...`
-  - `constraints`: `{ maxSlippageBps: 50, speedPriority: "balanced" }`
-  - `memoRequired`: Stellar memo requirement check (detects if destination is exchange address or requires memo tag).
+### Step 1: Conversational Dialogue & Multi-Turn Intent Clarification
+Rather than assuming a rigid single-shot command, Omnibridge utilizes a conversational state machine (`DialogueEngine` / `ChatSession`) to interact with the user:
 
-### Step 2: Route Discovery & Skill Resolution
-- The Skill Registry indexes skills matching `sourceChain`, `destinationChain`, and `token`.
-- If a direct native bridge exists (e.g. Allbridge Core for Polygon to Stellar or CCTP for Polygon to Base), it selects the optimal path.
-- If multi-hop is required (e.g. Polygon USDC -> Arbitrum USDC via CCTP, then swap to ARB via Uniswap v3), the planner composes multi-skill pipelines.
+```
+[User Message]
+       │
+       ▼
+1. Scope Evaluation Gate
+   ├─► Out of Scope: Politely explain Omnibridge cross-chain transfer capabilities & prompt for bridge request.
+   └─► In Scope (Cross-chain transfer): Proceed to Slot Filling.
+       │
+       ▼
+2. Slot-Filling State Tracker
+   Required Slots:
+   • sourceChain: (e.g. Polygon, Base, Arbitrum, Stellar, XRPL)
+   • targetChain: (e.g. Base, Stellar, Arbitrum, Ethereum)
+   • token: (e.g. USDC, ETH, XLM, XRP)
+   • amount: (Clean numeric string)
+   • targetAddress: (Valid destination address matching target VM checksum)
+   Optional Slots:
+   • memo / destinationTag: (Required for exchange/custodial accounts on Stellar/XRPL)
+   • maxSlippagePercent: (Defaults to 0.5%)
+       │
+       ▼
+3. Completeness & Clarification Check
+   ├─► Incomplete/Ambiguous Slots: Generate conversational clarifying question
+   │   (e.g., "What amount of USDC would you like to bridge from Base to Arbitrum?",
+   │    "Please provide the destination wallet address on Arbitrum.")
+   │   Wait for user response -> Update Slot-Filling State.
+   └─► All Slots Resolved & Validated: Present confirmation summary -> Transition to Route & Skill Resolution.
+```
 
-### Step 3: Just-In-Time (JIT) Code Generation
-- The Synthesizer pulls code generation guidelines and contract ABIs from the resolved `SKILL.md` files.
-- Generates a standalone, strictly-typed Node.js TypeScript script in an ephemeral directory (`.omnibridge/transient/run-<timestamp>-<hash>.ts`).
-- The script:
-  - Uses typed SDKs (`viem`, `@stellar/stellar-sdk`, `xrpl`).
-  - Reads keys only from the local secure session runner (never hardcoded in script text).
-  - Implements step-by-step transaction assertions and gas limit guards.
+- **Validation Rules**:
+  - The destination address is validated against the target network's virtual machine specification (EIP-55 checksum for EVM, StrKey for Stellar, Base58Check for XRPL) before moving forward.
+  - No synthetic placeholder addresses (like `0x000...000`) are ever injected silently when real execution is intended.
+
+### Step 2: Dynamic Skill Discovery & LLM Route Resolution
+**Zero-Hardcoding Invariant**: The core engine codebase contains **zero** hardcoded bridge protocols, blockchains, or conditional branching (`if protocol === 'across-v3'`).
+
+1. **Dynamic Skill Inventory**:
+   - The engine queries the `SkillRegistry` for all installed procedural skills in `/skills/**/*.SKILL.md`.
+   - Each skill advertises its supported networks, tokens, fee structures, speed profiles, and API endpoints.
+2. **Model-Driven Skill Selection**:
+   - The model matches the validated intent (`sourceChain`, `targetChain`, `token`, constraints) against the discovered skills.
+   - If multiple bridge skills qualify (e.g., Across vs. LiFi vs. Stargate), the model selects the optimal skill based on the user's constraints (e.g., lowest fee, highest speed, or guaranteed minimum output).
+   - If no installed skill supports the route, the model cleanly reports the capability gap and instructs the user how to install or configure the missing skill.
+
+### Step 3: Protocol-Agnostic JIT Code Generation
+Instead of maintaining static bridge templates in TypeScript source code:
+- The Synthesizer injects the procedural markdown rules, API schemas, and SDK interaction patterns from the selected `SKILL.md` directly into the LLM code generation prompt.
+- The LLM dynamically compiles a self-contained, single-use TypeScript execution script (`.omnibridge/transient/run-<timestamp>-<hash>.ts`).
+- The synthesized script:
+  - Consumes runtime keys exclusively via standard environment variables or transient signers.
+  - Implements step-by-step transaction assertions, quotes, approvals, and slippage guards.
+  - Contains zero protocol branching in the engine itself—the entire execution logic is self-contained within the ephemeral script.
 
 ### Step 4: Multi-Layer Static Analysis & Security Sandbox
 Before any interaction with live nodes:
@@ -450,7 +495,8 @@ Type [y/N] to proceed, [v] to view generated TypeScript code, [a] to abort:
 ```
 
 ### Step 7: Ephemeral Execution & Real-Time Telemetry
-- Script executes within a controlled child process.
+- **Protocol-Agnostic Execution**: The core runner executes the generated ephemeral TypeScript script directly in an isolated child process or sandboxed worker (or delegates to a standard skill entrypoint).
+- The core engine contains **zero protocol-specific broadcast logic** (no hardcoded API endpoints, contract ABIs, or protocol-specific SDK calls in the core runtime).
 - Streams live progress: Approval -> Lock/Deposit -> Cross-Chain Message Relaying -> Destination Mint/Claim -> Final Balance Verification.
 - Once complete, transient code is moved to `.omnibridge/archive/` with full transaction receipts and execution hash for reproducibility, leaving no lingering execution processes.
 
@@ -542,26 +588,27 @@ omnibridge2.0/
 │   ├── core/                        # 100% HEADLESS AGENT & ENGINE (Zero CLI/DOM imports)
 │   │   ├── engine.ts                # OmnibridgeCore class (orchestrates lifecycle)
 │   │   ├── agent/
-│   │   │   ├── omni-agent.ts        # Agent reasoning loop (M, T, Memory, Pi)
-│   │   │   ├── intent-parser.ts     # NLP intent extractor with Zod validation
-│   │   │   └── route-planner.ts     # Multi-chain pathway planner & recipe matcher
+│   │   │   ├── dialogue-engine.ts   # Conversational State Machine: Scope check & Slot-filling loop
+│   │   │   ├── chat-session.ts      # Multi-turn conversational memory & slot tracker
+│   │   │   ├── intent-parser.ts     # Structured intent validation & checksum normalization
+│   │   │   └── route-planner.ts     # Dynamic pathway planner & skill binder (zero hardcoded bridges)
 │   │   ├── llm/
 │   │   │   ├── model.interface.ts   # ILanguageModel abstraction
 │   │   │   ├── openai-adapter.ts    # OpenAI / Ollama / DeepSeek universal provider
 │   │   │   ├── anthropic-adapter.ts # Claude 3.5 Sonnet provider
 │   │   │   └── gemini-adapter.ts    # Google Gemini provider
 │   │   ├── skills/
-│   │   │   ├── skill-registry.ts    # Hybrid fast seed catalog + SKILL.md dynamic loader
-│   │   │   ├── skill-matcher.ts     # Binds intents to chain and bridge skills
-│   │   │   └── skill.types.ts       # Type definitions for Skills & Recipes
+│   │   │   ├── skill-registry.ts    # Dynamic SKILL.md discoverer & Tier 1/2 enricher
+│   │   │   ├── skill-matcher.ts     # Matches intent parameters against installed skills
+│   │   │   └── skill.types.ts       # Type definitions for Skills, Chains, Tokens & Recipes
 │   │   ├── synthesizer/
-│   │   │   ├── code-synthesizer.ts  # JIT code generation engine
+│   │   │   ├── code-synthesizer.ts  # Protocol-agnostic JIT synthesizer (ingests skill markdown)
 │   │   │   ├── ast-validator.ts     # Static AST security linter
-│   │   │   └── sandbox-runner.ts    # Child process sandbox execution
+│   │   │   └── sandbox-runner.ts    # Ephemeral TS execution runner in isolated sub-process
 │   │   ├── simulation/
+│   │   │   ├── preflight-simulator.ts # Generic pre-flight balance & invariant simulator
 │   │   │   ├── evm-simulator.ts     # Viem eth_call simulation
-│   │   │   ├── stellar-simulator.ts # Horizon & Soroban simulation
-│   │   │   └── xrpl-simulator.ts    # XRPL transaction simulation
+│   │   │   └── non-evm-simulator.ts # Stellar/XRPL account & sequence checks
 │   │   └── security/
 │   │       ├── hitl-gate.ts         # Strict Human-In-The-Loop gate coordinator
 │   │       ├── keystore.ts          # AES-256-GCM local encrypted key storage
@@ -576,18 +623,19 @@ omnibridge2.0/
 │   ├── cli/                         # CLI PRESENTATION LAYER
 │   │   ├── cli.ts                   # Commander program configuration
 │   │   ├── commands/
-│   │   │   ├── bridge.command.ts    # Intent bridge command runner
-│   │   │   ├── serve.command.ts     # Starts Web API/WebSocket server
-│   │   │   ├── skills.command.ts    # Skill inspect & list commands
-│   │   │   └── wallet.command.ts    # Secure key / wallet commands
+│   │   │   ├── bridge.command.ts    # Single-shot bridge command runner
+│   │   │   ├── repl.command.ts      # Multi-turn interactive conversational chat REPL
+│   │   │   ├── serve.command.ts     # Starts Web API/WebSocket chat & execution server
+│   │   │   └── skills.command.ts    # Dynamic skill inspect, list & install commands
 │   │   └── ui/
 │   │       ├── audit-card.ts        # High-contrast ANSI terminal Audit Card
 │   │       └── progress-bar.ts      # Terminal multi-step spinner
 │   ├── server/                      # WEB / API SERVER (For external Web/Desktop UIs)
 │   │   ├── server.ts                # Fastify/Node HTTP server entry
 │   │   ├── routes/
+│   │   │   ├── chat.router.ts       # Conversational chat & slot-filling endpoints
 │   │   │   ├── intent.router.ts     # REST endpoints for intent & simulation
-│   │   │   └── capabilities.router.ts # REST endpoints for chains & tokens
+│   │   │   └── capabilities.router.ts # Dynamic chains, tokens & installed skills
 │   │   └── websocket/
 │   │       └── ws-gateway.ts        # Real-time WebSocket streaming & HITL approval loop
 │   └── utils/
@@ -595,39 +643,48 @@ omnibridge2.0/
 │       ├── logger.ts                # Winston / chalk color logger
 │       └── formatters.ts            # Currency, token, and hash formatters
 ├── skills/                          # MODULAR PROTOCOL REGISTRY (Single source of truth)
-│   ├── chains/
-│   └── bridges/
+│   ├── across-v3/
+│   │   └── SKILL.md
+│   ├── lifi/
+│   │   └── SKILL.md
+│   ├── circle-cctp/
+│   │   └── SKILL.md
+│   └── allbridge-core/
+│       └── SKILL.md
 └── test/
-    ├── intent-parser.test.ts
-    ├── skill-registry.test.ts
-    ├── ast-validator.test.ts
-    └── hitl-gate.test.ts
+    ├── dialogue-engine.test.ts      # Tests multi-turn scope check & slot-filling clarification
+    ├── skill-registry.test.ts       # Tests dynamic loading without hardcoded protocols
+    ├── ast-validator.test.ts        # Tests security AST linter
+    └── protocol-agnostic.test.ts    # Validates ZERO hardcoded protocol names in src/core
 ```
 
 ---
 
 ## 9. Implementation Milestones
 
-### Milestone 1: Foundations & Skill Registry Engine
+### Milestone 1: Dynamic Skill Registry Engine (Zero Core Protocol Logic)
 - TypeScript project setup with strict typing, ES modules, and build scripts.
 - YAML frontmatter parser and markdown extractor for `SKILL.md`.
-- Implementation of initial core skills: `polygon`, `base`, `arbitrum`, `stellar`, `xrpl`, `circle-cctp`, `across-v3`, `allbridge-core`.
+- Dynamic discovery and loading of any skill dropped in `/skills/*/SKILL.md`.
+- Automated regression check ensuring `src/core/` contains no hardcoded bridge protocol names or `if/else` checks.
 
-### Milestone 2: Intent Parsing & Route Decomposition
-- Natural Language Intent Parser with Zod schema validation (supports direct EVM-to-EVM and cross-VM EVM-to-Stellar / EVM-to-XRPL).
-- Skill Matching Engine that binds intent entities to appropriate chain and bridge skills.
-- Route Planner calculating fee estimates, slippage constraints, and step sequence.
+### Milestone 2: Conversational Dialogue Engine & Slot-Filling Clarification
+- Multi-turn `DialogueEngine` and `ChatSession` implementation.
+- Scope evaluation gate: filters irrelevant queries and informs user of bridge capabilities.
+- Slot-filling state tracker with targeted clarifying questions for missing parameters (source, target, token, amount, address).
+- Checksum and VM-aware destination address validation.
 
-### Milestone 3: JIT Ephemeral Code Synthesizer & AST Security Sandbox
-- Dynamic code generation templates using `viem`, `@stellar/stellar-sdk`, and `xrpl`.
-- AST Static Security Validator using TypeScript Compiler API / acorn to ban dangerous modules (`fs.unlink`, arbitrary child processes, unauthorized network fetch).
-- Secure execution runner executing the ephemeral script in an isolated sub-process with timeouts and structured event emission.
+### Milestone 3: LLM Dynamic Route Resolution & Protocol-Agnostic JIT Synthesis
+- Model evaluates installed skills inventory dynamically to select optimal bridge protocol without hardcoded tables.
+- LLM synthesizes execution scripts by ingesting procedural rules, schemas, and API documentation directly from the selected skill's `SKILL.md`.
+- AST Static Security Validator using TypeScript Compiler API / acorn to ban unauthorized endpoints and disk access.
 
-### Milestone 4: Simulation & Strict HITL Gate
-- Multi-VM pre-flight simulation (EVM gas simulation, Stellar trustline checks, XRPL destination tag checks).
+### Milestone 4: Simulation, Strict HITL Gate & Sandbox Execution
+- Pre-flight simulation for balance verification, gas estimates, and transaction invariance.
 - Rich CLI Audit Card rendering (intent summary, route, fees, slippage, warnings, raw code inspector).
 - Interactive user confirmation gate (abort, view code, simulate, confirm).
+- Protocol-agnostic ephemeral runner executing the synthesized script in an isolated sub-process with streaming telemetry.
 
-### Milestone 5: Testing, E2E CLI & Documentation
-- Comprehensive unit test suite covering intent parsing, security AST validation, skill discovery, and HITL gate.
-- CLI binary packaging and configuration guide.
+### Milestone 5: Testing, E2E CLI REPL & Documentation
+- Comprehensive test suite covering conversational clarification loops, skill dynamic discovery, and JIT execution.
+- Interactive conversational REPL CLI and WebSocket chat server for UI integration.

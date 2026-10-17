@@ -15,7 +15,8 @@
   "scripts": {
     "dev": "tsx bin/omnibridge.ts",
     "build": "tsc",
-    "test": "tsx test/index.test.ts"
+    "test": "tsx test/index.test.ts",
+    "test:eval": "tsx test/evaluation.test.ts"
   },
   "keywords": ["cross-chain", "omnibridge", "jit", "agent", "evm", "stellar", "xrpl"],
   "author": "",
