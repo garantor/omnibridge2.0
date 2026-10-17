@@ -18,13 +18,20 @@ export class SkillRegistry {
   /**
    * Synchronously discovers and parses all local SKILL.md files on disk (<2ms)
    */
+  private diagnostics: {
+    excludedChains: { skill: string; chains: string[] }[];
+    excludedTokens: { skill: string; tokens: string[] }[];
+  } = { excludedChains: [], excludedTokens: [] };
+
   public loadSkillsSync(): void {
     this.chains.clear();
     this.bridgeSkills.clear();
     this.swapSkills.clear();
     this.routeRecipes.clear();
+    this.diagnostics = { excludedChains: [], excludedTokens: [] };
 
-    // 1. Initialize Tier 1 & Tier 2 Seed Catalog
+    // 1. Initialize Tier 1 & Tier 2 Seed Catalog (Strict Gatekeepers)
+    SeedCatalog.reset();
     SeedCatalog.init();
     for (const chain of SeedCatalog.getAllChains()) {
       this.chains.set(chain.name.toLowerCase(), chain);
@@ -58,7 +65,6 @@ export class SkillRegistry {
     }
   }
 
-
   private parseSkillFile(filePath: string): void {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
@@ -72,28 +78,53 @@ export class SkillRegistry {
       if (!frontmatter || !frontmatter.name) return;
 
       const skillName = frontmatter.name.toLowerCase();
-      const supportedChains: string[] = (frontmatter.supportedChains || []).map((c: any) => 
+
+      // STRICT INTERSECTION (Tier 1 Authority):
+      // Only retain chains that are enabled in Tier 1 (SeedCatalog / config/chains.json)
+      const rawSupportedChains: string[] = (frontmatter.supportedChains || []).map((c: any) => 
         (typeof c === 'string' ? c : c.name).toLowerCase()
       );
+      const supportedChains = rawSupportedChains.filter(chainName => this.chains.has(chainName));
+      const excludedChains = rawSupportedChains.filter(chainName => !this.chains.has(chainName));
+      if (excludedChains.length > 0) {
+        this.diagnostics.excludedChains.push({ skill: skillName, chains: excludedChains });
+      }
 
-      // Normalize tokens supporting both simple string symbols (['USDC']) and rich objects
-      const normalizedTokens = (frontmatter.supportedTokens || []).map((t: any) => {
-        if (typeof t === 'string') {
-          const canonical = SeedCatalog.getToken(t);
-          return {
-            symbol: t.toUpperCase(),
-            decimals: canonical?.decimals ?? 6,
-            addresses: canonical?.addresses || {},
-          };
-        }
-        const sym = (t.symbol || '').toUpperCase();
+      // STRICT INTERSECTION (Tier 2 Authority):
+      // Only tokens present in Tier 2 (SeedCatalog / config/tokens.json) and deployed on active enabled chains
+      const rawTokens = frontmatter.supportedTokens || [];
+      const normalizedTokens: { symbol: string; decimals: number; addresses: Record<string, string> }[] = [];
+      const excludedTokens: string[] = [];
+
+      for (const t of rawTokens) {
+        const sym = (typeof t === 'string' ? t : t.symbol || '').toUpperCase();
         const canonical = SeedCatalog.getToken(sym);
-        return {
-          symbol: sym,
-          decimals: t.decimals ?? canonical?.decimals ?? 6,
-          addresses: t.addresses || canonical?.addresses || {},
-        };
-      });
+        if (!canonical) {
+          excludedTokens.push(sym);
+          continue;
+        }
+
+        // Filter addresses to ONLY enabled chains for this skill
+        const activeAddresses: Record<string, string> = {};
+        for (const chainName of supportedChains) {
+          const addr = (typeof t === 'object' && t.addresses?.[chainName]) || canonical.addresses[chainName];
+          if (addr) {
+            activeAddresses[chainName] = addr;
+          }
+        }
+
+        const tokenDecimals = typeof t === 'object' && typeof t.decimals === 'number' ? t.decimals : canonical.decimals;
+        if (Object.keys(activeAddresses).length > 0) {
+          normalizedTokens.push({
+            symbol: sym,
+            decimals: tokenDecimals,
+            addresses: activeAddresses,
+          });
+        }
+      }
+      if (excludedTokens.length > 0) {
+        this.diagnostics.excludedTokens.push({ skill: skillName, tokens: excludedTokens });
+      }
 
       const skillType = (frontmatter.type === 'swap') ? 'swap' : 'bridge';
 
@@ -120,27 +151,13 @@ export class SkillRegistry {
       // Register cross-chain protocol skill
       this.bridgeSkills.set(skillName, skillMeta);
 
-      // Automatically discover and register/merge all chains mentioned in this skill
+      // Metadata enrichment: Merge overrides for active chains (never create phantom chains)
       for (const rawChain of (frontmatter.supportedChains || [])) {
         const isObj = typeof rawChain === 'object' && rawChain !== null;
-        const chainName = (isObj ? rawChain.name : rawChain).toLowerCase();
-        let chain = this.chains.get(chainName);
-
-        if (!chain) {
-          const canonical = SeedCatalog.getChain(chainName);
-          chain = canonical || {
-            name: chainName,
-            displayName: (isObj && rawChain.displayName) || chainName.charAt(0).toUpperCase() + chainName.slice(1),
-            vmType: (isObj && rawChain.vmType) || 'evm',
-            chainId: (isObj && rawChain.chainId !== undefined) ? rawChain.chainId : 0,
-            nativeToken: (isObj && rawChain.nativeToken) || { symbol: 'GAS', name: `${chainName.toUpperCase()} Native Gas`, decimals: 18 },
-            defaultRpc: (isObj && (rawChain.rpcUrl || rawChain.defaultRpc)) || '',
-            blockExplorer: (isObj && rawChain.blockExplorer) || '',
-            supportedTokens: [],
-          };
-          this.chains.set(chainName, chain);
-        } else if (isObj) {
-          // Merge metadata if overrides provided
+        if (!isObj) continue;
+        const chainName = rawChain.name.toLowerCase();
+        const chain = this.chains.get(chainName);
+        if (chain) {
           if (rawChain.displayName) chain.displayName = rawChain.displayName;
           if (rawChain.vmType) chain.vmType = rawChain.vmType;
           if (rawChain.chainId !== undefined) chain.chainId = rawChain.chainId;
@@ -156,18 +173,16 @@ export class SkillRegistry {
         if (!chain) continue;
 
         for (const token of normalizedTokens) {
-          const resolved = SeedCatalog.resolveTokenForChain(token.symbol, chainName);
-          const isNative = chain.nativeToken?.symbol?.toUpperCase() === token.symbol.toUpperCase();
-          const tokenAddr = token.addresses?.[chainName] || resolved?.address || (isNative ? 'native' : undefined);
-          if (!tokenAddr) continue; // Skip token if it is not deployed or supported on this chain
+          const tokenAddr = token.addresses[chainName];
+          if (!tokenAddr) continue;
 
           const exists = chain.supportedTokens.some(t => t.symbol.toUpperCase() === token.symbol.toUpperCase());
           if (!exists) {
             chain.supportedTokens.push({
               symbol: token.symbol.toUpperCase(),
-              name: resolved?.name || token.symbol,
+              name: SeedCatalog.getToken(token.symbol)?.name || token.symbol,
               address: tokenAddr,
-              decimals: token.decimals ?? resolved?.decimals ?? 6,
+              decimals: token.decimals,
               chain: chainName,
             });
           }
@@ -181,9 +196,15 @@ export class SkillRegistry {
   private buildDynamicRoutes(): void {
     for (const bridge of this.bridgeSkills.values()) {
       for (const src of bridge.supportedChains) {
+        if (!this.chains.has(src)) continue;
         for (const dst of bridge.supportedChains) {
           if (src === dst) continue;
+          if (!this.chains.has(dst)) continue;
           for (const token of bridge.supportedTokens) {
+            const srcAddr = token.addresses?.[src];
+            const dstAddr = token.addresses?.[dst];
+            if (!srcAddr || !dstAddr) continue;
+
             const recipeId = `${src}-to-${dst}-${token.symbol.toLowerCase()}`;
             if (!this.routeRecipes.has(recipeId)) {
               this.routeRecipes.set(recipeId, {
@@ -204,6 +225,13 @@ export class SkillRegistry {
         }
       }
     }
+  }
+
+  public getDiagnostics(): {
+    excludedChains: { skill: string; chains: string[] }[];
+    excludedTokens: { skill: string; tokens: string[] }[];
+  } {
+    return this.diagnostics;
   }
 
   public getSupportedChains(): ChainMetadata[] {

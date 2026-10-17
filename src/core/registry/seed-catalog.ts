@@ -72,6 +72,17 @@ export class SeedCatalog {
     this.loaded = true;
   }
 
+  public static reset(): void {
+    this.chains.clear();
+    this.tokens.clear();
+    this.loaded = false;
+  }
+
+  public static isChainSupported(name: string): boolean {
+    this.ensureLoaded();
+    return this.chains.has(name.toLowerCase());
+  }
+
   public static getChain(name: string): ChainMetadata | undefined {
     this.ensureLoaded();
     const c = this.chains.get(name.toLowerCase());
@@ -88,20 +99,46 @@ export class SeedCatalog {
 
   public static getToken(symbol: string): CanonicalToken | undefined {
     this.ensureLoaded();
-    return this.tokens.get(symbol.toUpperCase());
+    const t = this.tokens.get(symbol.toUpperCase());
+    if (!t) return undefined;
+    const activeAddresses: Record<string, string> = {};
+    for (const [chain, addr] of Object.entries(t.addresses)) {
+      if (this.chains.has(chain.toLowerCase())) {
+        activeAddresses[chain.toLowerCase()] = addr;
+      }
+    }
+    return {
+      ...t,
+      addresses: activeAddresses,
+    };
   }
 
   public static getAllTokens(): CanonicalToken[] {
     this.ensureLoaded();
-    return Array.from(this.tokens.values());
+    return Array.from(this.tokens.values()).map(t => {
+      const activeAddresses: Record<string, string> = {};
+      for (const [chain, addr] of Object.entries(t.addresses)) {
+        if (this.chains.has(chain.toLowerCase())) {
+          activeAddresses[chain.toLowerCase()] = addr;
+        }
+      }
+      return {
+        ...t,
+        addresses: activeAddresses,
+      };
+    });
   }
 
   public static resolveTokenForChain(tokenSymbol: string, chainName: string): TokenMetadata | null {
     this.ensureLoaded();
+    const chainKey = chainName.toLowerCase();
+    // Tier 1 Invariant: Chain MUST be an active configured network
+    if (!this.chains.has(chainKey)) return null;
+
     const token = this.tokens.get(tokenSymbol.toUpperCase());
     if (!token) return null;
 
-    const address = token.addresses[chainName.toLowerCase()];
+    const address = token.addresses[chainKey];
     if (!address) return null;
 
     return {
@@ -109,7 +146,7 @@ export class SeedCatalog {
       name: token.name,
       address,
       decimals: token.decimals,
-      chain: chainName.toLowerCase(),
+      chain: chainKey,
     };
   }
 

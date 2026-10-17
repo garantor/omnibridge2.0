@@ -1,25 +1,33 @@
 # Developer Guide: Adding Bridges, Chains & Tokens
 
-Omnibridge 2.0 uses a **3-Tier Scalable Registry Architecture** designed to eliminate code duplication and make extending cross-chain capabilities seamless.
+Omnibridge 2.0 uses a **3-Tier Scalable Registry Architecture** with **Strict Intersection Enforcement** designed to eliminate code duplication, prevent configuration drift, and make extending cross-chain capabilities seamless.
 
 ```mermaid
 graph TD
-    subgraph Tier1 ["Tier 1: Global Chains (config/chains.json)"]
-        C["Chain IDs, RPCs, Explorers, VM Type, Native Gas"]
+    subgraph Tier1 ["Tier 1: Global Chains Gatekeeper (config/chains.json)"]
+        C["Enabled Networks: Chain IDs, RPCs, Explorers, VM Type, Native Gas"]
     end
 
-    subgraph Tier2 ["Tier 2: Global Tokens (config/tokens.json)"]
-        T["Decimals & Canonical Contract Addresses Across Chains"]
+    subgraph Tier2 ["Tier 2: Global Tokens Gatekeeper (config/tokens.json)"]
+        T["Canonical Tokens: Decimals & Verified Contract Addresses per Chain"]
     end
 
     subgraph Tier3 ["Tier 3: Protocol Skills (skills/*/SKILL.md)"]
-        S["Lightweight Bridge Skill: supportedChains & supportedTokens"]
+        S["Bridge Capabilities: Declares all networks and tokens protocol supports"]
     end
 
-    Tier1 -->|Auto-Enriches| Engine["Omnibridge SkillRegistry"]
-    Tier2 -->|Auto-Enriches| Engine
-    Tier3 -->|Registers Bridge| Engine
+    Tier1 -->|Authority: Enabled Networks| Intersection["Strict Intersection Engine<br/>Skill.chains ∩ chains.json<br/>Skill.tokens ∩ tokens.json[chain]"]
+    Tier2 -->|Authority: Deployed Contracts| Intersection
+    Tier3 -->|Protocol Capabilities| Intersection
+    Intersection -->|Active Routes Only| Engine["Omnibridge Active Engine & CLI"]
 ```
+
+> [!IMPORTANT]
+> **Strict Intersection & Single Source of Truth:**
+> 1. **`config/chains.json` is the Supreme Authority for Networks**: An Omnibridge instance only recognizes chains enabled in `config/chains.json`. If a chain is removed from `config/chains.json`, all routes for that chain are immediately deactivated across all skills. Skills can never create phantom chains.
+> 2. **`config/tokens.json` is the Supreme Authority for Tokens**: A token is only active on a chain if a verified contract address is defined for that chain.
+> 3. **Protocol Skills are Declarative Capability Filters**: Skills declare what the protocol supports in the wild. Omnibridge computes the intersection so you never have to prune or edit protocol skill files when enabling or disabling chains locally.
+> 4. **Current Scope**: Currently, Omnibridge is configured to exclusively support **USDC** across enabled networks.
 
 ---
 
@@ -28,7 +36,7 @@ graph TD
 | Task | Files to Edit | Typical Effort |
 | :--- | :--- | :--- |
 | **Enable existing chain on bridge** | `skills/<bridge>/SKILL.md` | 1 line |
-| **Add a new chain to Omnibridge** | `config/chains.json` + `config/tokens.json` + `SKILL.md` | ~10 lines |
+| **Add or enable a chain in Omnibridge** | `config/chains.json` + `config/tokens.json` + `SKILL.md` | ~10 lines |
 | **Add a new token to Omnibridge** | `config/tokens.json` + `SKILL.md` | ~8 lines |
 | **Add a brand new bridge protocol** | Create `skills/<new-bridge>/SKILL.md` | 1 markdown file |
 
@@ -36,7 +44,7 @@ graph TD
 
 ## 1. Enabling an Existing Chain on a Bridge
 
-If the network already exists in [`config/chains.json`](file:///Users/afolabi/projects/omnibridge2.0/config/chains.json) (e.g., `polygon`, `base`, `arbitrum`, `ethereum`, `optimism`, `stellar`, `xrpl`), you only need to add its name to your bridge's `supportedChains` list.
+If the network already exists in [`config/chains.json`](../config/chains.json) (e.g., `polygon`, `base`, `arbitrum`, `ethereum`, `optimism`), you only need to add its name to your bridge's `supportedChains` list.
 
 ### Step:
 Open `skills/<bridge-name>/SKILL.md` and add the chain:
@@ -54,8 +62,8 @@ supportedChains:
 
 **What happens automatically:**
 1. The engine reads `optimism` and pulls its Chain ID, RPC, and explorer from Tier 1.
-2. It looks up all active tokens (`USDC`, etc.) on `optimism` from Tier 2.
-3. It generates all bidirectional route recipes (e.g., `base -> optimism`, `optimism -> arbitrum`).
+2. It looks up all active tokens (`USDC`) on `optimism` from Tier 2.
+3. It generates all bidirectional route recipes (e.g., `base -> optimism`, `optimism -> arbitrum`). If a chain in `supportedChains` is not present in `config/chains.json`, it is safely ignored without errors.
 
 ---
 
@@ -64,7 +72,7 @@ supportedChains:
 When adding a chain the repository hasn't seen before (e.g., `avalanche`, `linea`, `scroll`):
 
 ### Step 2.1: Register the Chain in Tier 1 (`config/chains.json`)
-Open [`config/chains.json`](file:///Users/afolabi/projects/omnibridge2.0/config/chains.json) and add the network object:
+Open [`config/chains.json`](../config/chains.json) and add the network object:
 
 ```json
 "avalanche": {
@@ -92,7 +100,7 @@ Open [`config/chains.json`](file:///Users/afolabi/projects/omnibridge2.0/config/
 ---
 
 ### Step 2.2: Add Token Contracts for the New Chain in Tier 2 (`config/tokens.json`)
-Open [`config/tokens.json`](file:///Users/afolabi/projects/omnibridge2.0/config/tokens.json) and add the contract addresses on this new chain:
+Open [`config/tokens.json`](../config/tokens.json) and add the contract addresses on this new chain:
 
 ```json
 "USDC": {
@@ -125,7 +133,7 @@ supportedChains:
 When adding a new supported asset (e.g., `USDT`, `DAI`, `WETH`):
 
 ### Step 3.1: Define Token in Tier 2 (`config/tokens.json`)
-Open [`config/tokens.json`](file:///Users/afolabi/projects/omnibridge2.0/config/tokens.json) and add the canonical definition:
+Open [`config/tokens.json`](../config/tokens.json) and add the canonical definition:
 
 ```json
 "DAI": {

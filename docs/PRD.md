@@ -245,10 +245,13 @@ capabilities:
 ---
 ```
 
-> [!NOTE]
-> **Backward Compatibility:** If a legacy or specialized skill provides custom chain overrides or custom contract address objects in frontmatter, the engine automatically merges them with highest precedence.
+> [!IMPORTANT]
+> **Strict Intersection Enforcement & Single Source of Truth:**
+> - **Tier 1 (`config/chains.json`) is the Gatekeeper for Networks:** Only chains explicitly configured in `chains.json` are loaded. Disabling a chain here instantly turns off all routes for that chain across all skills.
+> - **Tier 2 (`config/tokens.json`) is the Gatekeeper for Tokens:** A token is only routeable on a chain if a verified contract address is defined. Currently, only **USDC** is active.
+> - **Tier 3 (`skills/*/SKILL.md`) is Declarative Protocol Capabilities:** Active routes are strictly computed as $\text{Skill.chains} \cap \text{chains.json}$ and $\text{Skill.tokens} \cap \text{tokens.json}$. Skills cannot create phantom chains or unconfigured token routes.
 >
-> 📖 For a step-by-step developer guide on adding chains, tokens, and bridge skills, see [docs/ADDING_BRIDGES_CHAINS_TOKENS.md](file:///Users/afolabi/projects/omnibridge2.0/docs/ADDING_BRIDGES_CHAINS_TOKENS.md).
+> 📖 For a step-by-step developer guide on adding chains, tokens, and bridge skills, see [docs/ADDING_BRIDGES_CHAINS_TOKENS.md](./ADDING_BRIDGES_CHAINS_TOKENS.md).
 
 ### 3.3 Hybrid SkillRegistry: Fast Seed Catalog & Route Recipes (`src/core/skills/skill-registry.ts`)
 
