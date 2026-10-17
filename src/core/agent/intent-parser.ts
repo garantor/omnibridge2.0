@@ -8,7 +8,7 @@ export const ParsedIntentSchema = z.object({
   targetChain: z.string().describe('Target/destination blockchain network'),
   token: z.string().describe('Token/coin symbol to transfer (e.g. USDC, ETH, XLM, XRP)'),
   amount: z.union([z.string(), z.number().transform(v => v.toString())]).describe('Exact decimal amount to transfer (e.g. "100", "250.5")'),
-  targetAddress: z.string().describe('Destination wallet address on target chain'),
+  targetAddress: z.string().default('').describe('Destination wallet address on target chain'),
   maxSlippagePercent: z.union([z.number(), z.string().transform(v => parseFloat(v.replace('%', '')))]).default(0.5).describe('Maximum allowable slippage percentage'),
   memo: z.string().optional().describe('Optional memo text or destination tag for Stellar or XRPL'),
   resolvedBy: z.string().optional().describe('Method used to resolve intent (regex, LLM, or mock)'),
@@ -51,7 +51,7 @@ ${capabilityContext}
 Rules:
 - Standardize chain names to lowercase (e.g. 'Polygon' -> 'polygon', 'Stellar' -> 'stellar', 'Base' -> 'base').
 - Extract amount as a clean numeric string (e.g. "500").
-- If the user did not specify a destination address, use "${defaultTargetAddress || '0x0000000000000000000000000000000000000000'}".
+- If the user did not specify a destination address, use "${defaultTargetAddress || ''}".
 - Default maxSlippagePercent is 0.5.`;
 
     try {
@@ -91,11 +91,7 @@ Rules:
     const token = match[2].toUpperCase();
     const sourceChain = match[3].toLowerCase();
     const targetChain = match[4].toLowerCase();
-    let targetAddress = match[5] || defaultAddress;
-
-    if (!targetAddress) {
-      targetAddress = defaultAddress || '0x0000000000000000000000000000000000000000';
-    }
+    let targetAddress = match[5] || defaultAddress || '';
 
     return {
       sourceChain,
@@ -118,10 +114,19 @@ Rules:
       throw new Error(`Unsupported destination chain: "${intent.targetChain}". Supported chains: [${this.registry.getSupportedChains().map(c => c.name).join(', ')}]`);
     }
 
-    // Verify destination address syntax
-    const addrValidation = AddressChecker.validate(intent.targetAddress, dstChain.vmType);
-    if (!addrValidation.isValid) {
-      throw new Error(`Target address validation error on ${dstChain.displayName}: ${addrValidation.error}`);
+    if (intent.targetAddress && intent.targetAddress.trim() !== '') {
+      // Verify destination address syntax
+      const addrValidation = AddressChecker.validate(intent.targetAddress, dstChain.vmType);
+      if (!addrValidation.isValid) {
+        throw new Error(`Target address validation error on ${dstChain.displayName}: ${addrValidation.error}`);
+      }
+      return {
+        ...intent,
+        sourceChain: srcChain.name,
+        targetChain: dstChain.name,
+        token: intent.token.toUpperCase(),
+        targetAddress: addrValidation.normalizedAddress,
+      };
     }
 
     return {
@@ -129,7 +134,7 @@ Rules:
       sourceChain: srcChain.name,
       targetChain: dstChain.name,
       token: intent.token.toUpperCase(),
-      targetAddress: addrValidation.normalizedAddress,
+      targetAddress: '',
     };
   }
 }

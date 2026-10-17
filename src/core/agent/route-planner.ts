@@ -38,8 +38,23 @@ export class RoutePlanner {
   constructor(private registry: SkillRegistry) {}
 
   public plan(intent: ParsedIntent): ExecutionPlan {
-    const srcChain = this.registry.getChain(intent.sourceChain)!;
-    const dstChain = this.registry.getChain(intent.targetChain)!;
+    const inputNum = parseFloat(intent.amount);
+    if (isNaN(inputNum) || inputNum <= 0) {
+      throw new Error(`Amount must be greater than zero. Received: "${intent.amount}"`);
+    }
+
+    if (typeof intent.maxSlippagePercent !== 'number' || isNaN(intent.maxSlippagePercent) || intent.maxSlippagePercent < 0 || intent.maxSlippagePercent > 20) {
+      throw new Error(`Slippage percentage must be between 0% and 20%. Received: ${intent.maxSlippagePercent}%`);
+    }
+
+    const srcChain = this.registry.getChain(intent.sourceChain);
+    if (!srcChain) {
+      throw new Error(`No active bridge skill currently supports source chain "${intent.sourceChain}".`);
+    }
+    const dstChain = this.registry.getChain(intent.targetChain);
+    if (!dstChain) {
+      throw new Error(`No active bridge skill currently supports destination chain "${intent.targetChain}".`);
+    }
 
     // 1. Resolve token on source chain
     const srcTokens = this.registry.getSupportedTokens(srcChain.name);
@@ -76,7 +91,6 @@ export class RoutePlanner {
     const bridgeProtocol = recipe ? recipe.recommendedBridge : this.registry.getAllBridgeSkills()[0]?.name;
 
     // 4. Calculate fees & slippage invariants
-    const inputNum = parseFloat(intent.amount) || 0;
     const bridgeFeePercent = 0.0025; // Default standard base fee rate
     const bridgeFeeUsd = inputNum * bridgeFeePercent;
     const gasFeeUsd = srcChain.vmType === 'evm' ? 0.005 : 0.001;

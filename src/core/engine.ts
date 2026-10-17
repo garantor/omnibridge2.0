@@ -10,6 +10,7 @@ import { CliHITLHandler } from '../adapters/hitl/cli-hitl.js';
 import { OmnibridgeEventEmitter } from '../adapters/events/event-emitter.js';
 
 import { LiveExecutor } from './execution/live-executor.js';
+import { ChatResponse, ChatSession } from './agent/chat-session.js';
 
 export interface OmnibridgeEngineOptions {
   skillsRootDir?: string;
@@ -56,6 +57,15 @@ export class OmnibridgeEngine {
 
   public async init(): Promise<void> {
     await this.registry.loadSkills();
+  }
+
+  public createChatSession(): ChatSession {
+    return new ChatSession(this);
+  }
+
+  public async chat(message: string): Promise<ChatResponse> {
+    const session = this.createChatSession();
+    return session.sendMessage(message);
   }
 
   public async parseIntent(text: string, defaultAddress?: string): Promise<ParsedIntent> {

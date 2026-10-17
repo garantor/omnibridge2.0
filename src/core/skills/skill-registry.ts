@@ -102,6 +102,8 @@ export class SkillRegistry {
         supportedChains,
         supportedTokens: normalizedTokens,
         capabilities: frontmatter.capabilities || [],
+        api: frontmatter.api || {},
+        requirements: frontmatter.requirements || {},
         contracts: frontmatter.contracts || {},
         markdownRules,
       });

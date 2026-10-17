@@ -37,6 +37,8 @@ export interface BridgeSkillMetadata {
     addresses?: Record<string, string>;
   }[];
   capabilities: string[];
+  api?: Record<string, any>;
+  requirements?: Record<string, any>;
   contracts?: Record<string, any>;
   markdownRules: string;
 }

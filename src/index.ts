@@ -17,6 +17,7 @@ export type {
 // Agent Modules
 export { IntentParser, ParsedIntentSchema, type ParsedIntent } from './core/agent/intent-parser.js';
 export { RoutePlanner, type ExecutionPlan, type ExecutionStep } from './core/agent/route-planner.js';
+export { ChatSession, type ChatSlots, type ChatResponse } from './core/agent/chat-session.js';
 
 // Synthesis & Simulation
 export { CodeSynthesizer, type SynthesizedScript } from './core/synthesizer/code-synthesizer.js';

@@ -20,6 +20,15 @@ export class AddressChecker {
 
     switch (vmType) {
       case 'evm': {
+        if (/^(0x)?[0-9a-fA-F]{64}$/.test(trimmed)) {
+          return {
+            isValid: false,
+            normalizedAddress: trimmed,
+            vmType: 'evm',
+            requiresMemoWarning: false,
+            error: `Secret/private key detected! Never enter private keys: "${trimmed}"`,
+          };
+        }
         if (!isAddress(trimmed)) {
           return {
             isValid: false,
@@ -38,6 +47,15 @@ export class AddressChecker {
       }
 
       case 'stellar': {
+        if (trimmed.startsWith('S') || StrKey.isValidEd25519SecretSeed(trimmed)) {
+          return {
+            isValid: false,
+            normalizedAddress: trimmed,
+            vmType: 'stellar',
+            requiresMemoWarning: false,
+            error: `Secret/private key detected! Never enter private keys: "${trimmed}"`,
+          };
+        }
         const isValid = StrKey.isValidEd25519PublicKey(trimmed);
         if (!isValid) {
           return {

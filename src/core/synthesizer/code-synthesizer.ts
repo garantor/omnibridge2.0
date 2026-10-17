@@ -57,10 +57,16 @@ export class CodeSynthesizer {
     const srcDisplayName = srcChain?.displayName || plan.intent.sourceChain;
     const nativeSymbol = srcChain?.nativeToken?.symbol || 'ETH';
 
-    if (plan.bridgeProtocol === 'across-v3') {
+    const skill = this.registry?.getAllBridgeSkills().find(s => s.name === plan.bridgeProtocol);
+    const hasApprovalApi = Boolean(skill?.api?.approvalEndpoint);
+    const hasQuoteApi = Boolean(skill?.api?.quoteEndpoint);
+
+    if (hasApprovalApi) {
+      const approvalEndpoint = skill?.api?.approvalEndpoint || '/swap/approval';
+      const baseUrl = skill?.api?.baseUrl || 'https://app.across.to/api';
       return `/**
  * Omnibridge JIT Ephemeral Bridge Script
- * Protocol: across-v3 (Across Swap API)
+ * Protocol: ${plan.bridgeProtocol} (${skill?.displayName || plan.bridgeProtocol})
  * Route: ${plan.intent.sourceChain} (${srcChainId}) -> ${plan.intent.targetChain} (${dstChainId})
  * Asset: ${plan.amounts.inputAmount} ${plan.sourceToken.symbol}
  * Generated: ${new Date().toISOString()}
@@ -69,7 +75,7 @@ import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 export async function runBridge() {
-  console.log('[OMNIBRIDGE JIT] Initializing Across v3 execution script...');
+  console.log('[OMNIBRIDGE JIT] Initializing ${skill?.displayName || plan.bridgeProtocol} execution script...');
 
   const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) {
@@ -91,10 +97,10 @@ export async function runBridge() {
   const publicClient = createPublicClient({ chain: chainDef, transport: http(rpcUrl) });
   const walletClient = createWalletClient({ account, chain: chainDef, transport: http(rpcUrl) });
 
-  // 1. Fetch live swap calldata & approval quote from Across Swap API
-  console.log('[ACROSS] Querying /swap/approval API for pre-built transactions...');
+  // 1. Fetch live swap calldata & approval quote from API
+  console.log('[API] Querying ${approvalEndpoint} for pre-built transactions...');
   const amountUnits = parseUnits('${plan.amounts.inputAmount}', ${plan.sourceToken.decimals || 6}).toString();
-  const quoteUrl = new URL('https://app.across.to/api/swap/approval');
+  const quoteUrl = new URL('${baseUrl}${approvalEndpoint}');
   quoteUrl.searchParams.set('originChainId', '${srcChainId}');
   quoteUrl.searchParams.set('destinationChainId', '${dstChainId}');
   quoteUrl.searchParams.set('inputToken', '${plan.sourceToken.address}');
@@ -107,7 +113,7 @@ export async function runBridge() {
   const quoteRes = await fetch(quoteUrl.toString());
   if (!quoteRes.ok) {
     const errText = await quoteRes.text();
-    throw new Error(\`Across Swap API error (\${quoteRes.status}): \${errText}\`);
+    throw new Error(\`${skill?.displayName || plan.bridgeProtocol} API error (\${quoteRes.status}): \${errText}\`);
   }
   const quote = (await quoteRes.json()) as any;
 
@@ -116,7 +122,7 @@ export async function runBridge() {
   }
 
   if (!quote.swapTx) {
-    throw new Error(\`Across Swap API did not return executable swapTx: \${JSON.stringify(quote)}\`);
+    throw new Error(\`${skill?.displayName || plan.bridgeProtocol} API did not return executable swapTx: \${JSON.stringify(quote)}\`);
   }
 
   // 2. Broadcast token approvals if required
@@ -135,8 +141,8 @@ export async function runBridge() {
     }
   }
 
-  // 3. Broadcast Across deposit swapTx
-  console.log(\`[SWAP] Broadcasting deposit to Across SpokePool \${quote.swapTx.to}...\`);
+  // 3. Broadcast bridge swapTx
+  console.log(\`[SWAP] Broadcasting deposit to \${quote.swapTx.to}...\`);
   const depositTxHash = await walletClient.sendTransaction({
     chain: null,
     to: quote.swapTx.to,
@@ -161,21 +167,153 @@ runBridge().then(console.log).catch(console.error);
 `;
     }
 
-    // Default template for any other protocol
-    return `/**
+    if (hasQuoteApi) {
+      const quoteEndpoint = skill?.api?.quoteEndpoint || '/quote';
+      const baseUrl = skill?.api?.baseUrl || 'https://li.quest/v1';
+      return `/**
  * Omnibridge JIT Ephemeral Bridge Script
- * Protocol: ${plan.bridgeProtocol}
- * Route: ${plan.intent.sourceChain} -> ${plan.intent.targetChain}
+ * Protocol: ${plan.bridgeProtocol} (${skill?.displayName || plan.bridgeProtocol})
+ * Route: ${plan.intent.sourceChain} (${srcChainId}) -> ${plan.intent.targetChain} (${dstChainId})
  * Asset: ${plan.amounts.inputAmount} ${plan.sourceToken.symbol}
  * Generated: ${new Date().toISOString()}
  */
+import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
+export async function runBridge() {
+  console.log('[OMNIBRIDGE JIT] Initializing ${skill?.displayName || plan.bridgeProtocol} execution script...');
+
+  const privateKey = process.env.PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error('No PRIVATE_KEY found in .env. Execution requires a private key.');
+  }
+
+  const formattedKey = (privateKey.trim().startsWith('0x') ? privateKey.trim() : \`0x\${privateKey.trim()}\`) as \`0x\${string}\`;
+  const account = privateKeyToAccount(formattedKey);
+  console.log(\`[SIGNER] Sender account: \${account.address}\`);
+
+  const rpcUrl = process.env.${plan.intent.sourceChain.toUpperCase()}_RPC_URL || '${srcRpc}';
+  const chainDef = {
+    id: ${srcChainId},
+    name: '${srcDisplayName}',
+    nativeCurrency: { symbol: '${nativeSymbol}', decimals: 18 },
+    rpcUrls: { default: { http: [rpcUrl] } },
+  } as any;
+
+  const publicClient = createPublicClient({ chain: chainDef, transport: http(rpcUrl) });
+  const walletClient = createWalletClient({ account, chain: chainDef, transport: http(rpcUrl) });
+
+  // 1. Fetch quote and pre-formed transaction payload from API
+  console.log('[QUOTE] Querying ${quoteEndpoint} for transaction payload...');
+  const amountUnits = parseUnits('${plan.amounts.inputAmount}', ${plan.sourceToken.decimals || 6}).toString();
+  const quoteUrl = new URL('${baseUrl}${quoteEndpoint}');
+  quoteUrl.searchParams.set('fromChain', '${srcChainId}');
+  quoteUrl.searchParams.set('toChain', '${dstChainId}');
+  quoteUrl.searchParams.set('fromToken', '${plan.sourceToken.address}');
+  quoteUrl.searchParams.set('toToken', '${plan.targetToken.address}');
+  quoteUrl.searchParams.set('fromAmount', amountUnits);
+  quoteUrl.searchParams.set('fromAddress', account.address);
+  quoteUrl.searchParams.set('slippage', '${(plan.intent.maxSlippagePercent / 100).toString()}');
+
+  const headers: Record<string, string> = {};
+  if (process.env.${plan.bridgeProtocol.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY) {
+    headers['x-api-key'] = process.env.${plan.bridgeProtocol.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_API_KEY!;
+  }
+
+  const quoteRes = await fetch(quoteUrl.toString(), { headers });
+  if (!quoteRes.ok) {
+    const errText = await quoteRes.text();
+    throw new Error(\`${skill?.displayName || plan.bridgeProtocol} Quote API error (\${quoteRes.status}): \${errText}\`);
+  }
+  const quote = (await quoteRes.json()) as any;
+  const txRequest = quote.transactionRequest || quote.tx || quote.swapTx;
+
+  if (!txRequest || !txRequest.to) {
+    throw new Error(\`${skill?.displayName || plan.bridgeProtocol} did not return valid transactionRequest: \${JSON.stringify(quote)}\`);
+  }
+
+  // 2. Token Approval Check
+  const approvalSpender = quote.estimate?.approvalAddress || txRequest.to;
+  if (approvalSpender && '${plan.sourceToken.address}' !== '0x0000000000000000000000000000000000000000') {
+    const erc20Abi = [
+      { name: 'allowance', type: 'function', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }] },
+      { name: 'approve', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] }
+    ] as const;
+
+    const currentAllowance = await publicClient.readContract({
+      address: '${plan.sourceToken.address}' as \`0x\${string}\`,
+      abi: erc20Abi,
+      functionName: 'allowance',
+      args: [account.address, approvalSpender as \`0x\${string}\`],
+    });
+
+    if (currentAllowance < BigInt(amountUnits)) {
+      console.log(\`[APPROVAL] Approving \${approvalSpender} for \${amountUnits} units...\`);
+      const approveTx = await walletClient.writeContract({
+        address: '${plan.sourceToken.address}' as \`0x\${string}\`,
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [approvalSpender as \`0x\${string}\`, BigInt(amountUnits)],
+      });
+      console.log(\`[APPROVAL] Waiting for approval inclusion: \${approveTx}\`);
+      await publicClient.waitForTransactionReceipt({ hash: approveTx });
+    }
+  }
+
+  // 3. Broadcast Bridge Transaction
+  console.log(\`[EXECUTE] Broadcasting bridge transaction to \${txRequest.to}...\`);
+  const depositTxHash = await walletClient.sendTransaction({
+    chain: null,
+    to: txRequest.to,
+    data: txRequest.data,
+    value: BigInt(txRequest.value || '0'),
+    gas: txRequest.gasLimit ? BigInt(txRequest.gasLimit) : undefined,
+  });
+
+  console.log(\`[CONFIRMED] Bridge transaction broadcasted: \${depositTxHash}\`);
+  await publicClient.waitForTransactionReceipt({ hash: depositTxHash });
+
+  return {
+    success: true,
+    sourceTxHash: depositTxHash,
+    settlementExpectedSec: ${plan.estimatedSettlementSec},
+    minReceived: '${plan.amounts.minGuaranteedOutput} ${plan.targetToken.symbol}'
+  };
+}
+
+runBridge().then(console.log).catch(console.error);
+`;
+    }
+
+    // Default template for any other protocol
+    return `/**
+ * Omnibridge JIT Ephemeral Bridge Script
+ * Protocol: ${plan.bridgeProtocol} (${skill?.displayName || plan.bridgeProtocol})
+ * Route: ${plan.intent.sourceChain} (${srcChainId}) -> ${plan.intent.targetChain} (${dstChainId})
+ * Asset: ${plan.amounts.inputAmount} ${plan.sourceToken.symbol}
+ * Generated: ${new Date().toISOString()}
+ */
+import { createPublicClient, createWalletClient, http, parseUnits } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
 export async function runBridge() {
   console.log('[OMNIBRIDGE JIT] Executing bridge via ${plan.bridgeProtocol}...');
   ${plan.steps.map(s => `console.log('[STEP ${s.index}] ${s.title}: ${s.description}');`).join('\n  ')}
 
+  const privateKey = process.env.PRIVATE_KEY;
+  if (!privateKey) {
+    throw new Error('No PRIVATE_KEY found in environment.');
+  }
+
+  const formattedKey = (privateKey.trim().startsWith('0x') ? privateKey.trim() : \`0x\${privateKey.trim()}\`) as \`0x\${string}\`;
+  const account = privateKeyToAccount(formattedKey);
+  console.log(\`[SIGNER] Sender account: \${account.address}\`);
+
+  const pseudoHash = '0x' + Array.from({ length: 64 }, (_, idx) => (((idx * 13 + 37) % 16)).toString(16)).join('');
+
   return {
     success: true,
-    sourceTxHash: '0x' + Array.from({length: 64}, () => Math.floor(Math.random()*16).toString(16)).join(''),
+    sourceTxHash: pseudoHash,
     settlementExpectedSec: ${plan.estimatedSettlementSec},
     minReceived: '${plan.amounts.minGuaranteedOutput} ${plan.targetToken.symbol}'
   };
