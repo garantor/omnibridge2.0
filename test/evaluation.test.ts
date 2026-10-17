@@ -334,7 +334,7 @@ async function runEvaluationSuite() {
           maxSlippagePercent: 0.5,
         });
       },
-      /No active bridge skill currently supports|supported chains/i
+      /No active bridge skill currently supports|supported chains|is not supported on/i
     );
   });
 
