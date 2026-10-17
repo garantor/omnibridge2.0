@@ -24,7 +24,6 @@ supportedChains:
 
 supportedTokens:
   - USDC
-  - ETH
 
 # 3. Protocol Execution Interface (Pure Declarative - Choose API or Contract)
 # ─────────────────────────────────────────────────────────────────────────────

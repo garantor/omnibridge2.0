@@ -18,12 +18,6 @@ supportedChains:
 
 supportedTokens:
   - USDC
-  - USDT
-  - ETH
-  - MATIC
-  - WBTC
-  - ARB
-  - OP
 
 capabilities:
   - concentrated-liquidity
