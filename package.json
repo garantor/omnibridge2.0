@@ -5,7 +5,7 @@
     "typescript": "^7.0.2"
   },
   "name": "omnibridge2.0",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
@@ -14,7 +14,7 @@
   },
   "scripts": {
     "dev": "tsx bin/omnibridge.ts",
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/bin/omnibridge.js",
     "test": "tsx test/index.test.ts",
     "test:eval": "tsx test/evaluation.test.ts"
   },

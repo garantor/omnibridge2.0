@@ -1,7 +1,49 @@
+import crypto from 'node:crypto';
 import { isAddress } from 'viem';
 import { StrKey } from '@stellar/stellar-sdk';
-import { isValidClassicAddress } from 'xrpl';
 import { VmType } from '../skills/skill.types.js';
+
+const RIPPLE_ALPHABET = 'rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz';
+
+function decodeRippleBase58(str: string): Buffer | null {
+  const bytes = [0];
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    const value = RIPPLE_ALPHABET.indexOf(char);
+    if (value === -1) return null;
+    for (let j = 0; j < bytes.length; j++) {
+      bytes[j] *= 58;
+    }
+    bytes[0] += value;
+    let carry = 0;
+    for (let j = 0; j < bytes.length; j++) {
+      bytes[j] += carry;
+      carry = bytes[j] >> 8;
+      bytes[j] &= 0xff;
+    }
+    while (carry > 0) {
+      bytes.push(carry & 0xff);
+      carry >>= 8;
+    }
+  }
+  for (let i = 0; i < str.length && str[i] === RIPPLE_ALPHABET[0]; i++) {
+    bytes.push(0);
+  }
+  return Buffer.from(bytes.reverse());
+}
+
+function isValidXrplClassicAddress(address: string): boolean {
+  if (typeof address !== 'string') return false;
+  if (!address.startsWith('r')) return false;
+  if (address.length < 25 || address.length > 35) return false;
+  const decoded = decodeRippleBase58(address);
+  if (!decoded || decoded.length < 5) return false;
+  const payload = decoded.subarray(0, decoded.length - 4);
+  const checksum = decoded.subarray(decoded.length - 4);
+  const hash1 = crypto.createHash('sha256').update(payload).digest();
+  const hash2 = crypto.createHash('sha256').update(hash1).digest();
+  return checksum.equals(hash2.subarray(0, 4));
+}
 
 export interface AddressValidationResult {
   isValid: boolean;
@@ -75,7 +117,7 @@ export class AddressChecker {
       }
 
       case 'xrpl': {
-        const isValid = isValidClassicAddress(trimmed);
+        const isValid = isValidXrplClassicAddress(trimmed);
         if (!isValid) {
           return {
             isValid: false,

@@ -12,7 +12,7 @@ export function createCli(): Command {
   program
     .name('omnibridge')
     .description('Modular Just-In-Time (JIT) Cross-Chain Blockchain Bridge Engine & CLI')
-    .version('1.1.0');
+    .version('1.2.0');
 
   // Main natural language intent command (Default)
   program
