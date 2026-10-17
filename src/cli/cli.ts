@@ -23,10 +23,14 @@ export function createCli(): Command {
     .option('-m, --model <model>', 'LLM model to use')
     .option('-p, --provider <provider>', 'LLM provider (openai-compatible, mock, anthropic, gemini)')
     .action(async (intentParts: string[], options) => {
-      const intentText = intentParts.join(' ').trim();
-      if (!intentText) {
+      let intentText = intentParts.join(' ').trim();
+      if (!intentText || intentText.toLowerCase() === 'intent') {
         program.help();
         return;
+      }
+
+      if (intentText.toLowerCase().startsWith('intent ')) {
+        intentText = intentText.substring(7).trim();
       }
 
       const llm = createLanguageModel({
@@ -41,6 +45,16 @@ export function createCli(): Command {
 
       const signer = LiveExecutor.getSignerAccount();
       try {
+        await engine.init();
+
+        // Check if query is out of scope (e.g. conversational greetings, general questions)
+        const chatSession = engine.createChatSession();
+        const chatReply = await chatSession.sendMessage(intentText);
+        if (chatReply.scope === 'OUT_OF_SCOPE') {
+          console.log(chalk.bold.yellow(`\nℹ ${chatReply.message}\n`));
+          return;
+        }
+
         console.log(chalk.bold.cyan(`\n⚡ Omnibridge Engine parsing intent: "${intentText}"...`));
         engine.events.on('intent:parsed', (event: any) => {
           const resolvedBy = event?.data?.resolvedBy || event?.resolvedBy;

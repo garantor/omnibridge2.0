@@ -56,9 +56,10 @@ export class ChatSession {
 
     // 2. Scope Evaluation Gate
     if (!this.isInScope(trimmed)) {
+      const activeChains = this.engine.registry.getSupportedChains().map(c => c.displayName).join(', ');
       return {
         scope: 'OUT_OF_SCOPE',
-        message: 'I am Omnibridge, an autonomous cross-chain bridge agent. I can assist with cross-chain token transfers between networks like Polygon, Base, Arbitrum, Optimism, Ethereum, Stellar, and XRPL. How can I help you bridge tokens?',
+        message: `I am Omnibridge, an autonomous cross-chain bridge agent. I can assist with cross-chain token transfers between active networks (${activeChains || 'Polygon, Base, Arbitrum'}). How can I help you bridge tokens?`,
         isComplete: false,
         slots: { ...this.slots },
         missingSlots: this.computeMissingSlots(),

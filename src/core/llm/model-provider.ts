@@ -10,10 +10,26 @@ export class OpenAICompatibleModel implements ILanguageModel {
   private baseUrl: string;
 
   constructor(options: { providerName?: string; modelId?: string; apiKey?: string; baseUrl?: string } = {}) {
-    this.providerName = options.providerName || 'openai-compatible';
+    this.providerName = options.providerName || 'universal-llm';
     this.modelId = options.modelId || process.env.LLM_MODEL || 'gpt-4o';
-    this.apiKey = options.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
-    this.baseUrl = (options.baseUrl || process.env.LLM_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    this.apiKey = options.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || '';
+    
+    let base = (options.baseUrl || process.env.LLM_BASE_URL || 'https://api.openai.com/v1').trim();
+    // Auto-strip accidental repeated env var name prefix like LLM_BASE_URL=
+    if (base.startsWith('LLM_BASE_URL=')) {
+      base = base.replace(/^LLM_BASE_URL=/, '').trim();
+    }
+    // Auto-strip surrounding quotes if present
+    base = base.replace(/^["']|["']$/g, '').trim().replace(/\/+$/, '');
+    // Auto-normalize if user provided full endpoint instead of base
+    if (base.endsWith('/chat/completions')) {
+      base = base.replace(/\/chat\/completions$/, '');
+    }
+    // Auto-normalize Gemini URLs to official OpenAI-compatible endpoint
+    if (base.includes('generativelanguage.googleapis.com') && !base.includes('/openai')) {
+      base = 'https://generativelanguage.googleapis.com/v1beta/openai';
+    }
+    this.baseUrl = base;
   }
 
   async generateStructured<T>(options: StructuredGenerationOptions<T>): Promise<T> {
@@ -56,17 +72,31 @@ export class OpenAICompatibleModel implements ILanguageModel {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`LLM API request failed (${res.status}): ${errText}`);
+      let msg = errText;
+      try {
+        const parsedErr = JSON.parse(errText);
+        msg = parsedErr.error?.message || (Array.isArray(parsedErr) && parsedErr[0]?.error?.message) || errText;
+      } catch {}
+      throw new Error(`LLM API request failed (${res.status}): ${msg}`);
     }
 
     const json = await res.json() as any;
     const content = json.choices?.[0]?.message?.content || '{}';
-    let parsed = JSON.parse(content);
+    let cleanContent = content.trim();
+    if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+    }
+    let parsed = JSON.parse(cleanContent);
     if (parsed && typeof parsed === 'object') {
       if (parsed.def && typeof parsed.def === 'object') {
         parsed = parsed.def;
       } else if (parsed.intent && typeof parsed.intent === 'object') {
         parsed = parsed.intent;
+      }
+      for (const key of Object.keys(parsed)) {
+        if (parsed[key] === null) {
+          delete parsed[key];
+        }
       }
     }
     return options.schema.parse(parsed);
@@ -90,7 +120,12 @@ export class OpenAICompatibleModel implements ILanguageModel {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`LLM API request failed (${res.status}): ${errText}`);
+      let msg = errText;
+      try {
+        const parsedErr = JSON.parse(errText);
+        msg = parsedErr.error?.message || (Array.isArray(parsedErr) && parsedErr[0]?.error?.message) || errText;
+      } catch {}
+      throw new Error(`LLM API request failed (${res.status}): ${msg}`);
     }
 
     const json = await res.json() as any;
@@ -116,7 +151,7 @@ export class DeterministicMockModel implements ILanguageModel {
     const amount = amountMatch ? amountMatch[1] : '100';
 
     let sourceChain = 'polygon';
-    let targetChain = 'stellar';
+    let targetChain = 'base';
     let token = 'USDC';
 
     const lower = lastUserMsg.toLowerCase();
@@ -174,17 +209,21 @@ export function createLanguageModel(options?: {
   apiKey?: string;
   baseUrl?: string;
 }): ILanguageModel {
-  const hasKey = !!(options?.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY);
-  const provider = options?.provider || process.env.LLM_PROVIDER || (hasKey || options?.model ? 'openai-compatible' : 'mock');
+  const hasKey = !!(options?.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY);
+  const provider = options?.provider || process.env.LLM_PROVIDER || (hasKey || options?.model ? 'universal-llm' : 'mock');
 
   if (provider === 'mock') {
     return new DeterministicMockModel();
   }
 
+  const apiKey = options?.apiKey || process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || '';
+  const baseUrl = options?.baseUrl || process.env.LLM_BASE_URL || 'https://api.openai.com/v1';
+  const modelId = options?.model || process.env.LLM_MODEL || 'gpt-4o';
+
   return new OpenAICompatibleModel({
     providerName: provider,
-    modelId: options?.model,
-    apiKey: options?.apiKey,
-    baseUrl: options?.baseUrl,
+    modelId,
+    apiKey,
+    baseUrl,
   });
 }
