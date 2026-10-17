@@ -25,11 +25,13 @@ export interface ChainMetadata {
   supportedTokens: TokenMetadata[];
 }
 
+export type SkillType = 'bridge' | 'swap';
+
 export interface BridgeSkillMetadata {
   name: string;
   displayName: string;
   version: string;
-  type: 'bridge';
+  type: SkillType;
   supportedChains: string[];
   supportedTokens: {
     symbol: string;

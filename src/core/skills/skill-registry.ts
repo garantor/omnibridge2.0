@@ -7,6 +7,7 @@ import { SeedCatalog } from '../registry/seed-catalog.js';
 export class SkillRegistry {
   private chains: Map<string, ChainMetadata> = new Map();
   private bridgeSkills: Map<string, BridgeSkillMetadata> = new Map();
+  private swapSkills: Map<string, BridgeSkillMetadata> = new Map();
   private routeRecipes: Map<string, RouteRecipe> = new Map();
   private initialized = false;
 
@@ -20,6 +21,7 @@ export class SkillRegistry {
   public loadSkillsSync(): void {
     this.chains.clear();
     this.bridgeSkills.clear();
+    this.swapSkills.clear();
     this.routeRecipes.clear();
 
     // 1. Initialize Tier 1 & Tier 2 Seed Catalog
@@ -93,12 +95,13 @@ export class SkillRegistry {
         };
       });
 
-      // Register protocol skill
-      this.bridgeSkills.set(skillName, {
+      const skillType = (frontmatter.type === 'swap') ? 'swap' : 'bridge';
+
+      const skillMeta: BridgeSkillMetadata = {
         name: skillName,
         displayName: frontmatter.displayName || skillName,
         version: frontmatter.version || '1.0.0',
-        type: 'bridge',
+        type: skillType,
         supportedChains,
         supportedTokens: normalizedTokens,
         capabilities: frontmatter.capabilities || [],
@@ -106,7 +109,16 @@ export class SkillRegistry {
         requirements: frontmatter.requirements || {},
         contracts: frontmatter.contracts || {},
         markdownRules,
-      });
+      };
+
+      // DEX Swaps (e.g. Uniswap, Jupiter) are same-chain primitives, NOT cross-chain bridges
+      if (skillType === 'swap') {
+        this.swapSkills.set(skillName, skillMeta);
+        return;
+      }
+
+      // Register cross-chain protocol skill
+      this.bridgeSkills.set(skillName, skillMeta);
 
       // Automatically discover and register/merge all chains mentioned in this skill
       for (const rawChain of (frontmatter.supportedChains || [])) {
@@ -138,20 +150,24 @@ export class SkillRegistry {
         }
       }
 
-      // Register tokens defined or referenced in this skill for each supported chain
+      // Register tokens defined or referenced in this bridge skill for each supported chain
       for (const chainName of supportedChains) {
         const chain = this.chains.get(chainName);
         if (!chain) continue;
 
         for (const token of normalizedTokens) {
-          const tokenAddr = token.addresses?.[chainName] || SeedCatalog.resolveTokenForChain(token.symbol, chainName)?.address || 'native';
+          const resolved = SeedCatalog.resolveTokenForChain(token.symbol, chainName);
+          const isNative = chain.nativeToken?.symbol?.toUpperCase() === token.symbol.toUpperCase();
+          const tokenAddr = token.addresses?.[chainName] || resolved?.address || (isNative ? 'native' : undefined);
+          if (!tokenAddr) continue; // Skip token if it is not deployed or supported on this chain
+
           const exists = chain.supportedTokens.some(t => t.symbol.toUpperCase() === token.symbol.toUpperCase());
           if (!exists) {
             chain.supportedTokens.push({
               symbol: token.symbol.toUpperCase(),
-              name: token.symbol,
+              name: resolved?.name || token.symbol,
               address: tokenAddr,
-              decimals: token.decimals ?? 6,
+              decimals: token.decimals ?? resolved?.decimals ?? 6,
               chain: chainName,
             });
           }
@@ -268,6 +284,14 @@ export class SkillRegistry {
 
   public getAllBridgeSkills(): BridgeSkillMetadata[] {
     return Array.from(this.bridgeSkills.values());
+  }
+
+  public getSwapSkill(name: string): BridgeSkillMetadata | undefined {
+    return this.swapSkills.get(name.toLowerCase());
+  }
+
+  public getAllSwapSkills(): BridgeSkillMetadata[] {
+    return Array.from(this.swapSkills.values());
   }
 
   public formatCapabilityContextForLLM(): string {
