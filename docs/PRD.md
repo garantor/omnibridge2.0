@@ -8,6 +8,10 @@
 
 ---
 
+```
+The main Goal of omninbridge is not to handle user intent, but to redunce developer time to integrate protocols, and provide a bridge that can support any protocol within dew, instead writing hardcoded code, we write protocol specific skills, this mean user interface of today still can still remain the same, the main difference will be the engine behind the scene, the old hardcoded code now replaced my llm routing using specified skills writing in plain human readable language, with the help of new agentic development method, we can support any protocol with minimum effort, as long as it provide good documentation and SDK, we can support it with minimum effort.
+```
+
 ## 1. Executive Summary & Vision
 
 ### 1.1 Problem Statement
