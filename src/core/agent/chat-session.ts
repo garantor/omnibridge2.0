@@ -174,13 +174,21 @@ export class ChatSession {
         }
       }
     } else {
-      // E. Full fast pattern: "Bridge 100 USDC from Base to Arbitrum [wallet]"
-      const fullMatch = text.match(/(?:bridge|send|transfer|move)\s+([\d.]+)\s+([a-zA-Z0-9]+)\s+(?:from\s+)?([a-zA-Z0-9_-]+)\s+to\s+([a-zA-Z0-9_-]+)/i);
-      if (fullMatch) {
-        this.slots.amount = fullMatch[1];
-        this.slots.token = fullMatch[2].toUpperCase();
-        this.slots.sourceChain = fullMatch[3].toLowerCase();
-        this.slots.targetChain = fullMatch[4].toLowerCase();
+      // E. Full or partial pattern: "Bridge 100 USDC from Base [to Arbitrum]" or "Bridge 100 USDC to Arbitrum"
+      const fullOrPartialMatch = text.match(/(?:bridge|send|transfer|move)\s+([\d.]+)\s+([a-zA-Z0-9]+)(?:\s+(?:from\s+)?([a-zA-Z0-9_-]+))?(?:\s+to\s+([a-zA-Z0-9_-]+))?/i);
+      if (fullOrPartialMatch) {
+        if (fullOrPartialMatch[1]) this.slots.amount = fullOrPartialMatch[1];
+        if (fullOrPartialMatch[2]) this.slots.token = fullOrPartialMatch[2].toUpperCase();
+        if (fullOrPartialMatch[3]) {
+          const cand = fullOrPartialMatch[3].toLowerCase();
+          const chain = this.engine.registry.getChain(cand);
+          this.slots.sourceChain = chain ? chain.name : cand;
+        }
+        if (fullOrPartialMatch[4]) {
+          const cand = fullOrPartialMatch[4].toLowerCase();
+          const chain = this.engine.registry.getChain(cand);
+          this.slots.targetChain = chain ? chain.name : cand;
+        }
       }
     }
 
@@ -190,7 +198,14 @@ export class ChatSession {
       if (toChainMatch) {
         const potentialChain = toChainMatch[1].toLowerCase();
         const chainMeta = this.engine.registry.getChain(potentialChain);
-        if (chainMeta) {
+        if (!chainMeta || chainMeta.name !== this.slots.sourceChain) {
+          this.slots.targetChain = chainMeta ? chainMeta.name : potentialChain;
+        }
+      } else if (this.slots.sourceChain) {
+        // If entire text or word is a known supported chain
+        const trimmedWord = text.trim().toLowerCase();
+        const chainMeta = this.engine.registry.getChain(trimmedWord);
+        if (chainMeta && chainMeta.name !== this.slots.sourceChain) {
           this.slots.targetChain = chainMeta.name;
         }
       }
@@ -258,20 +273,21 @@ export class ChatSession {
   }
 
   private generateClarifyingQuestion(missing: string[]): string {
-    if (missing.includes('targetAddress')) {
-      return `Please provide the destination wallet address on ${this.slots.targetChain || 'the target network'}.`;
-    }
     if (missing.includes('amount')) {
       return `How much ${this.slots.token || 'tokens'} would you like to bridge?`;
+    }
+    if (missing.includes('token')) {
+      return `Which token would you like to bridge?`;
     }
     if (missing.includes('sourceChain')) {
       return `Which source network would you like to bridge from?`;
     }
     if (missing.includes('targetChain')) {
-      return `Which target network would you like to bridge to?`;
+      const active = this.engine.registry.getSupportedChains().map(c => c.displayName).join(', ');
+      return `Which destination network would you like to bridge to? (Supported: ${active || 'Base, Arbitrum, Polygon, Optimism'})`;
     }
-    if (missing.includes('token')) {
-      return `Which token would you like to bridge?`;
+    if (missing.includes('targetAddress')) {
+      return `Please provide the destination wallet address on ${this.slots.targetChain || 'the target network'}.`;
     }
     return `Please specify additional transfer details.`;
   }
