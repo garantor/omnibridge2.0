@@ -110,7 +110,70 @@ async function runTests() {
   assert.equal(tokenFound.address.toLowerCase(), '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'.toLowerCase());
   console.log('  ✔ 3-Tier Registry accurately decoupled chains, tokens, and protocol skills');
 
-  console.log('\n🎉 ALL 8 TESTS PASSED SUCCESSFULLY!');
+  // Test 9: LLM Agentic Route Reasoning
+  console.log('▶ Test 9: LLM-Driven Route Reasoning & Protocol Selection');
+  const llmPlanner = new RoutePlanner(registry, mockModel);
+  const llmPlan = await llmPlanner.planWithLLM({
+    sourceChain: 'polygon',
+    targetChain: 'base',
+    token: 'USDC',
+    amount: '100',
+    targetAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    maxSlippagePercent: 0.5,
+  });
+  assert(llmPlan.bridgeProtocol, 'LLM plan must specify a bridge protocol');
+  assert(llmPlan.reasoning, 'LLM plan must include reasoning');
+  assert(llmPlan.steps.length >= 3, 'LLM plan must sequence execution steps');
+  console.log(`  ✔ LLM route planner reasoned: "${llmPlan.reasoning}"`);
+
+  // Test 10: Multi-Hop Route Planning (Connecting two bridges without direct connection)
+  console.log('▶ Test 10: Multi-Hop Route Connection (Intermediate Hub Resolution)');
+  const customRegistry = new SkillRegistry();
+  (customRegistry as any).chains.set('polygon', registry.getChain('polygon')!);
+  (customRegistry as any).chains.set('base', registry.getChain('base')!);
+  (customRegistry as any).chains.set('arbitrum', registry.getChain('arbitrum')!);
+  (customRegistry as any).bridgeSkills.clear();
+  (customRegistry as any).routeRecipes.clear();
+
+  (customRegistry as any).bridgeSkills.set('bridge-alpha', {
+    name: 'bridge-alpha',
+    displayName: 'Bridge Alpha',
+    version: '1.0.0',
+    type: 'bridge',
+    supportedChains: ['polygon', 'base'],
+    supportedTokens: [{ symbol: 'USDC', decimals: 6, addresses: { polygon: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' } }],
+    capabilities: ['cross-chain'],
+    markdownRules: '',
+  });
+
+  (customRegistry as any).bridgeSkills.set('bridge-beta', {
+    name: 'bridge-beta',
+    displayName: 'Bridge Beta',
+    version: '1.0.0',
+    type: 'bridge',
+    supportedChains: ['base', 'arbitrum'],
+    supportedTokens: [{ symbol: 'USDC', decimals: 6, addresses: { base: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', arbitrum: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831' } }],
+    capabilities: ['cross-chain'],
+    markdownRules: '',
+  });
+
+  const mhPlanner = new RoutePlanner(customRegistry, mockModel);
+  const multiHopPlan = await mhPlanner.planWithLLM({
+    sourceChain: 'polygon',
+    targetChain: 'arbitrum',
+    token: 'USDC',
+    amount: '500',
+    targetAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    maxSlippagePercent: 0.5,
+  });
+
+  assert(multiHopPlan.isMultiHop, 'Plan should be marked as multi-hop');
+  assert.equal(multiHopPlan.intermediateChains?.[0], 'base');
+  assert.equal(multiHopPlan.bridgeProtocol, 'bridge-alpha + bridge-beta');
+  assert(multiHopPlan.steps.length >= 4, `Multi-hop plan must have sequential steps across hops, got ${multiHopPlan.steps.length}`);
+  console.log(`  ✔ Multi-Hop connected: polygon -> [base] -> arbitrum (${multiHopPlan.bridgeProtocol})`);
+
+  console.log('\n🎉 ALL 10 TESTS PASSED SUCCESSFULLY!');
 }
 
 runTests().catch(err => {

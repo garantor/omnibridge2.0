@@ -172,6 +172,35 @@ export class DeterministicMockModel implements ILanguageModel {
       token = 'XRP';
     }
 
+    if (options.schemaName === 'LLMRouteDecision') {
+      const isMultiHop = lower.includes('multi-hop') || lower.includes('solana to base') || lower.includes('stellar to arbitrum') || (sourceChain === 'stellar' && targetChain === 'arbitrum');
+      const mockDecision = {
+        reasoning: isMultiHop
+          ? `Dynamically routed via intermediate hub polygon connecting bridge skills to complete multi-hop route.`
+          : `Selected optimal bridge based on registered protocol skills for ${sourceChain} -> ${targetChain}.`,
+        isMultiHop,
+        primaryProtocol: isMultiHop ? 'allbridge-core + across-v3' : 'across-v3',
+        intermediateChains: isMultiHop ? ['polygon'] : [],
+        estimatedSettlementSec: isMultiHop ? 62 : 60,
+        estimatedBridgeFeePercent: isMultiHop ? 0.005 : 0.0025,
+        steps: isMultiHop
+          ? [
+              { index: 1, title: 'APPROVE on ' + sourceChain, description: 'Approve bridge contract on ' + sourceChain, chain: sourceChain, protocol: 'allbridge-core', action: 'approve' },
+              { index: 2, title: 'BRIDGE to polygon', description: 'Cross-chain transfer to intermediate hub polygon', chain: sourceChain, protocol: 'allbridge-core', action: 'bridge' },
+              { index: 3, title: 'APPROVE on polygon', description: 'Approve across-v3 router on polygon', chain: 'polygon', protocol: 'across-v3', action: 'approve' },
+              { index: 4, title: 'BRIDGE to ' + targetChain, description: 'Cross-chain transfer from polygon to ' + targetChain, chain: 'polygon', protocol: 'across-v3', action: 'bridge' },
+              { index: 5, title: 'CLAIM on ' + targetChain, description: 'Settlement on destination network', chain: targetChain, protocol: 'across-v3', action: 'claim' },
+            ]
+          : [
+              { index: 1, title: `APPROVE on ${sourceChain}`, description: `Approve router contract`, chain: sourceChain, protocol: 'token', action: 'approve' },
+              { index: 2, title: `BRIDGE on ${sourceChain}`, description: `Deposit into cross-chain bridge`, chain: sourceChain, protocol: 'across-v3', action: 'bridge' },
+              { index: 3, title: `CLAIM on ${targetChain}`, description: `Attestation settlement`, chain: targetChain, protocol: 'across-v3', action: 'claim' },
+            ],
+        warnings: isMultiHop ? ['Multi-hop transfer: intermediate chain gas required on polygon.'] : [],
+      };
+      return options.schema.parse(mockDecision);
+    }
+
     // Default mock response conforming to intent schema
     const mockIntent = {
       sourceChain,

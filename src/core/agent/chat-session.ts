@@ -95,9 +95,8 @@ export class ChatSession {
     let plan: ExecutionPlan | undefined;
 
     if (isComplete) {
-      responseMessage = `Ready to bridge ${this.slots.amount} ${this.slots.token} from ${this.slots.sourceChain} to ${this.slots.targetChain} (Recipient: ${this.slots.targetAddress}).`;
       try {
-        plan = this.engine.planRoute({
+        plan = await this.engine.planRoute({
           sourceChain: this.slots.sourceChain!,
           targetChain: this.slots.targetChain!,
           token: this.slots.token!,
@@ -106,8 +105,16 @@ export class ChatSession {
           memo: this.slots.memo,
           maxSlippagePercent: this.slots.maxSlippagePercent ?? this.defaultSlippage,
         });
+
+        const latencySuffix = plan.planningDurationMs !== undefined ? ` [Decision in ${plan.planningDurationMs}ms]` : '';
+        if (plan.isMultiHop && plan.intermediateChains?.length) {
+          responseMessage = `Ready to bridge ${this.slots.amount} ${this.slots.token} from ${this.slots.sourceChain} to ${this.slots.targetChain} via multi-hop (intermediate hub: ${plan.intermediateChains.join(', ')}). Recipient: ${this.slots.targetAddress}.${latencySuffix}`;
+        } else {
+          responseMessage = `Ready to bridge ${this.slots.amount} ${this.slots.token} from ${this.slots.sourceChain} to ${this.slots.targetChain} (Recipient: ${this.slots.targetAddress}).${latencySuffix}`;
+        }
       } catch (err: any) {
         // Keep plan undefined if route planning fails
+        responseMessage = `Ready to bridge ${this.slots.amount} ${this.slots.token} from ${this.slots.sourceChain} to ${this.slots.targetChain} (Recipient: ${this.slots.targetAddress}).`;
       }
     } else {
       responseMessage = this.generateClarifyingQuestion(missing);

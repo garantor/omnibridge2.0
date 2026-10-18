@@ -322,13 +322,60 @@ export class SkillRegistry {
     return Array.from(this.swapSkills.values());
   }
 
+  public findMultiHopPath(sourceChain: string, targetChain: string, tokenSymbol: string): {
+    intermediateChain: string;
+    leg1Bridge: BridgeSkillMetadata;
+    leg2Bridge: BridgeSkillMetadata;
+    estimatedSettlementSec: number;
+    estimatedBridgeFeePercent: number;
+  } | null {
+    const src = sourceChain.toLowerCase();
+    const dst = targetChain.toLowerCase();
+    const sym = tokenSymbol.toUpperCase();
+
+    // Check all active chains as potential intermediate hubs
+    for (const chain of this.chains.values()) {
+      const hub = chain.name.toLowerCase();
+      if (hub === src || hub === dst) continue;
+
+      // Leg 1: bridge from src -> hub for sym
+      const leg1Bridges = Array.from(this.bridgeSkills.values()).filter(b =>
+        b.supportedChains.includes(src) &&
+        b.supportedChains.includes(hub) &&
+        b.supportedTokens.some(t => t.symbol.toUpperCase() === sym)
+      );
+      if (leg1Bridges.length === 0) continue;
+
+      // Leg 2: bridge from hub -> dst for sym
+      const leg2Bridges = Array.from(this.bridgeSkills.values()).filter(b =>
+        b.supportedChains.includes(hub) &&
+        b.supportedChains.includes(dst) &&
+        b.supportedTokens.some(t => t.symbol.toUpperCase() === sym)
+      );
+      if (leg2Bridges.length === 0) continue;
+
+      const leg1Bridge = leg1Bridges[0];
+      const leg2Bridge = leg2Bridges[0];
+
+      return {
+        intermediateChain: hub,
+        leg1Bridge,
+        leg2Bridge,
+        estimatedSettlementSec: 90,
+        estimatedBridgeFeePercent: 0.005,
+      };
+    }
+
+    return null;
+  }
+
   public formatCapabilityContextForLLM(): string {
     const chainsSummary = this.getSupportedChains()
       .map(c => `- ${c.displayName} (${c.name}, VM: ${c.vmType}, Native: ${c.nativeToken.symbol}, Tokens: [${c.supportedTokens.map(t => t.symbol).join(', ')}])`)
       .join('\n');
 
     const bridgesSummary = this.getAllBridgeSkills()
-      .map(b => `- ${b.displayName} (${b.name}): Connects [${b.supportedChains.join(', ')}], Tokens: [${b.supportedTokens.map(t => t.symbol).join(', ')}]`)
+      .map(b => `- ${b.displayName} (${b.name}): Connects [${b.supportedChains.join(', ')}], Tokens: [${b.supportedTokens.map(t => t.symbol).join(', ')}], Capabilities: [${b.capabilities.join(', ')}]`)
       .join('\n');
 
     const recipesSummary = Array.from(this.routeRecipes.values())
@@ -336,6 +383,6 @@ export class SkillRegistry {
       .map(r => `  * ${r.sourceChain} -> ${r.targetChain} (${r.tokenSymbol}) via ${r.recommendedBridge} (~${r.expectedSettlementTimeSec}s)`)
       .join('\n');
 
-    return `### SUPPORTED NETWORKS:\n${chainsSummary}\n\n### BRIDGES:\n${bridgesSummary}\n\n### FAST PATH ROUTE RECIPES:\n${recipesSummary}`;
+    return `### SUPPORTED NETWORKS:\n${chainsSummary}\n\n### BRIDGES & PROTOCOLS:\n${bridgesSummary}\n\n### FAST PATH ROUTE RECIPES:\n${recipesSummary}`;
   }
 }

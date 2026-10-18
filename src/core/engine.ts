@@ -48,7 +48,7 @@ export class OmnibridgeEngine {
     this.registry = new SkillRegistry(options.skillsRootDir);
     this.llm = options.llm || createLanguageModel();
     this.intentParser = new IntentParser(this.registry, this.llm);
-    this.routePlanner = new RoutePlanner(this.registry);
+    this.routePlanner = new RoutePlanner(this.registry, this.llm);
     this.synthesizer = new CodeSynthesizer(this.registry);
     this.hitlHandler = options.hitlHandler || new CliHITLHandler(options.autoApprove ?? false);
     this.events = new OmnibridgeEventEmitter();
@@ -74,10 +74,33 @@ export class OmnibridgeEngine {
     return intent;
   }
 
-  public planRoute(intent: ParsedIntent): ExecutionPlan {
-    const plan = this.routePlanner.plan(intent);
-    this.events.emitEvent('route:planned', plan);
-    return plan;
+  public planRoute(intent: ParsedIntent, options?: { useLLM?: boolean }): ExecutionPlan & PromiseLike<ExecutionPlan> {
+    const basePlan = this.routePlanner.plan(intent);
+    this.events.emitEvent('route:planned', basePlan);
+
+    const routePlanner = this.routePlanner;
+    const events = this.events;
+    const hasLlm = Boolean(this.llm);
+
+    const thenablePlan: any = {
+      ...basePlan,
+      then(onFulfilled?: (value: ExecutionPlan) => any, onRejected?: (reason: any) => any) {
+        return (async () => {
+          try {
+            const enriched = (options?.useLLM !== false && hasLlm)
+              ? await routePlanner.planWithLLM(intent)
+              : basePlan;
+            events.emitEvent('route:planned', enriched);
+            return onFulfilled ? onFulfilled(enriched) : enriched;
+          } catch (err) {
+            if (onRejected) return onRejected(err);
+            return onFulfilled ? onFulfilled(basePlan) : basePlan;
+          }
+        })();
+      },
+    };
+
+    return thenablePlan;
   }
 
   public async simulate(plan: ExecutionPlan): Promise<SimulationResult> {
@@ -118,6 +141,8 @@ export class OmnibridgeEngine {
     return {
       intent: `Bridge ${plan.amounts.inputAmount} ${plan.sourceToken.symbol} from ${plan.intent.sourceChain} to ${plan.intent.targetChain}`,
       resolvedBy: plan.intent.resolvedBy,
+      decisionLatencyMs: plan.planningDurationMs,
+      reasoning: plan.reasoning,
       safetyScore: 98,
       riskLevel: isHighValue ? 'MEDIUM' : 'LOW',
       source: {
@@ -172,7 +197,7 @@ export class OmnibridgeEngine {
     const intent = await this.parseIntent(intentText, options.targetAddress);
 
     // 2. Deterministic Route Planning & Recipe Binding
-    const plan = this.planRoute(intent);
+    const plan = await this.planRoute(intent);
 
     // 3. JIT Ephemeral Code Generation & AST Security Linting
     const script = await this.synthesizeCode(plan);
