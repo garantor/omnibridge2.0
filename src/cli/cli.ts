@@ -57,14 +57,43 @@ export function createCli(): Command {
 
         console.log(chalk.bold.cyan(`\n⚡ Omnibridge Engine parsing intent: "${intentText}"...`));
         engine.events.on('intent:parsed', (event: any) => {
-          const resolvedBy = event?.data?.resolvedBy || event?.resolvedBy;
+          const intent = event?.data || event;
+          const resolvedBy = intent?.resolvedBy;
           if (resolvedBy) {
-            console.log(chalk.dim(`   ↳ Resolved via: ${chalk.bold.yellow(resolvedBy)}\n`));
+            console.log(chalk.dim(`   ↳ Resolved via: ${chalk.bold.yellow(resolvedBy)}`));
           }
           if (options.verbose) {
             console.log(chalk.bold.white('📦 Model Decomposition Output:'));
-            console.log(chalk.green(JSON.stringify(event?.data || event, null, 2)) + '\n');
+            console.log(chalk.green(JSON.stringify(intent, null, 2)));
           }
+        });
+
+        engine.events.on('route:planned', (event: any) => {
+          const plan = event?.data || event;
+          const durationStr = plan?.planningDurationMs !== undefined ? ` (Decision time: ${plan.planningDurationMs}ms)` : '';
+          console.log(chalk.bold.cyan(`\n⚡ Route Decision Engine${durationStr}:`));
+          console.log(chalk.dim(`   ↳ Selected Route: ${chalk.bold.green(plan.intent.sourceChain)} ──[ ${chalk.bold.yellow(plan.bridgeProtocol)} ]──> ${chalk.bold.green(plan.intent.targetChain)}`));
+          if (plan.isMultiHop && plan.intermediateChains?.length) {
+            console.log(chalk.dim(`   ↳ Multi-Hop Connection: via intermediate hub ${chalk.bold.magenta(plan.intermediateChains.join(', '))}`));
+          }
+          if (plan.reasoning) {
+            console.log(chalk.dim(`   ↳ Reasoning: ${plan.reasoning}`));
+          }
+          console.log(chalk.dim(`   ↳ Action Plan: ${plan.steps.length} sequential execution steps scheduled`));
+        });
+
+        engine.events.on('script:synthesized', (event: any) => {
+          const script = event?.data || event;
+          console.log(chalk.bold.cyan(`\n⚡ JIT Code Synthesis & AST Security:`));
+          console.log(chalk.dim(`   ↳ Single-use script: ${chalk.white(script.filePath)}`));
+          console.log(chalk.dim(`   ↳ AST Sandbox Linter: ${script.astValid ? chalk.green('PASSED (0 violations)') : chalk.red('FAILED')}`));
+        });
+
+        engine.events.on('simulation:complete', (event: any) => {
+          const sim = event?.data || event;
+          console.log(chalk.bold.cyan(`\n⚡ Pre-Flight Simulation Dry-Run:`));
+          console.log(chalk.dim(`   ↳ Contract simulation: ${sim.status === 'SUCCESS' ? chalk.green('SUCCESS') : chalk.red('REVERT')}`));
+          console.log(chalk.dim(`   ↳ Gas consumption: ${sim.gasUnitsUsed.toLocaleString()} gas units ($${sim.gasCostEstimatedUsd.toFixed(4)})\n`));
         });
         const result = await engine.execute(intentText, {
           dryRun: options.dryRun,

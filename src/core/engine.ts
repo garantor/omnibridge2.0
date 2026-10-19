@@ -76,23 +76,27 @@ export class OmnibridgeEngine {
 
   public planRoute(intent: ParsedIntent, options?: { useLLM?: boolean }): ExecutionPlan & PromiseLike<ExecutionPlan> {
     const basePlan = this.routePlanner.plan(intent);
-    this.events.emitEvent('route:planned', basePlan);
-
     const routePlanner = this.routePlanner;
     const events = this.events;
-    const hasLlm = Boolean(this.llm);
+    const hasLlm = Boolean(this.llm) && options?.useLLM !== false;
+
+    // If no LLM will be queried, emit base plan immediately
+    if (!hasLlm) {
+      this.events.emitEvent('route:planned', basePlan);
+    }
 
     const thenablePlan: any = {
       ...basePlan,
       then(onFulfilled?: (value: ExecutionPlan) => any, onRejected?: (reason: any) => any) {
         return (async () => {
           try {
-            const enriched = (options?.useLLM !== false && hasLlm)
+            const enriched = hasLlm
               ? await routePlanner.planWithLLM(intent)
               : basePlan;
             events.emitEvent('route:planned', enriched);
             return onFulfilled ? onFulfilled(enriched) : enriched;
           } catch (err) {
+            events.emitEvent('route:planned', basePlan);
             if (onRejected) return onRejected(err);
             return onFulfilled ? onFulfilled(basePlan) : basePlan;
           }
