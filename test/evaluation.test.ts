@@ -415,6 +415,37 @@ async function runEvaluationSuite() {
     }
   });
 
+  await runCase('4.5: Protocol skills without configured execution endpoints fail fast without faking transactions', async () => {
+    const registry = new SkillRegistry();
+    await registry.loadSkills();
+
+    const planner = new RoutePlanner(registry);
+    const plan = planner.plan({
+      sourceChain: 'base',
+      targetChain: 'stellar',
+      token: 'USDC',
+      amount: '2',
+      targetAddress: 'GC2H6LQWKXEB2LX6OLDFIG4NIWRSKBLJUAXY566JYZCY5G67G6YHSOB2',
+      maxSlippagePercent: 0.5,
+    });
+    plan.bridgeProtocol = 'allbridge-core';
+
+    const srcChain = registry.getChain(plan.intent.sourceChain)!;
+    const dstChain = registry.getChain(plan.intent.targetChain)!;
+
+    const prevKey = process.env.PRIVATE_KEY;
+    process.env.PRIVATE_KEY = '0x0123456789012345678901234567890123456789012345678901234567890123';
+    try {
+      const liveRes = await LiveExecutor.execute(plan, srcChain, dstChain);
+      assert.equal(liveRes.success, false, 'Must fail because protocol execution is not yet implemented');
+      assert.equal(liveRes.isLive, false, 'Must not claim isLive when no broadcast occurred');
+      assert.equal(liveRes.txHash, undefined, 'Must not return a fake transaction hash');
+      assert(liveRes.error?.includes('not yet implemented'), `Expected descriptive error, got: ${liveRes.error}`);
+    } finally {
+      process.env.PRIVATE_KEY = prevKey;
+    }
+  });
+
   // --------------------------------------------------------------------------
   // SUITE 5: MULTI-VM ADDRESS & CHECKSUM EDGE CASES
   // --------------------------------------------------------------------------

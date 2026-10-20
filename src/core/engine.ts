@@ -203,6 +203,11 @@ export class OmnibridgeEngine {
     // 2. Deterministic Route Planning & Recipe Binding
     const plan = await this.planRoute(intent);
 
+    // Fail early if live execution is requested for an unsupported protocol
+    if (!options.dryRun) {
+      LiveExecutor.checkExecutionSupport(plan, this.registry);
+    }
+
     // 3. JIT Ephemeral Code Generation & AST Security Linting
     const script = await this.synthesizeCode(plan);
 

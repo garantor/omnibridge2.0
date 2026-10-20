@@ -63,5 +63,18 @@
     },
     "defaultRpc": "https://mainnet.optimism.io",
     "blockExplorer": "https://optimistic.etherscan.io"
+  }, 
+  "stellar": {
+    "name": "stellar",
+    "displayName": "Stellar",
+    "chainId": 0,
+    "vmType": "stellar",
+    "nativeToken": {
+      "symbol": "XLM",
+      "name": "Stellar",
+      "decimals": 7
+    },
+    "defaultRpc": "https://horizon.stellar.org",
+    "blockExplorer": "https://stellar.expert"
   }
 }

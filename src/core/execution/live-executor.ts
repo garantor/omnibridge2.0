@@ -89,7 +89,7 @@ export class LiveExecutor {
       return await this.executeGenericSkill(plan, srcChain, dstChain, signer, skill, logs);
     } catch (err: any) {
       return {
-        isLive: true,
+        isLive: false,
         success: false,
         error: err.message || String(err),
         logs,
@@ -337,6 +337,20 @@ export class LiveExecutor {
     };
   }
 
+  public static checkExecutionSupport(plan: ExecutionPlan, registry?: SkillRegistry): void {
+    const reg = registry || new SkillRegistry();
+    const protocolNames = plan.bridgeProtocol.split(/\s*\+\s*/);
+    for (const proto of protocolNames) {
+      const skill = reg.getAllBridgeSkills().find(s => s.name === proto);
+      if (!skill?.api?.approvalEndpoint && !skill?.api?.quoteEndpoint) {
+        const protocolName = skill?.displayName || proto;
+        throw new Error(
+          `Live on-chain execution for "${protocolName}" is not yet implemented. Supported live protocols currently require configured API endpoints (e.g. across-v3, lifi).`
+        );
+      }
+    }
+  }
+
   private static async executeGenericSkill(
     plan: ExecutionPlan,
     srcChain: ChainMetadata,
@@ -345,13 +359,11 @@ export class LiveExecutor {
     skill: BridgeSkillMetadata | undefined,
     logs: string[]
   ): Promise<LiveExecutionResult> {
-    logs.push(`[LIVE] Executing bridge protocol "${plan.bridgeProtocol}"...`);
-    const pseudoTxHash = '0x' + Array.from({ length: 64 }, (_, idx) => (((idx * 17 + 29) % 16)).toString(16)).join('');
+    this.checkExecutionSupport(plan, undefined);
     return {
-      isLive: true,
-      success: true,
-      txHash: pseudoTxHash,
-      explorerUrl: srcChain.blockExplorer ? `${srcChain.blockExplorer}/tx/${pseudoTxHash}` : undefined,
+      isLive: false,
+      success: false,
+      error: `Live execution not supported for ${plan.bridgeProtocol}`,
       logs,
     };
   }
